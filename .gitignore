@@ -1,6 +1,9 @@
 .coverage
 *-coverage.txt
 *.egg-info
+*.pyc
 __pycache__
 .eggs/
 .tox/
+build/
+dist/
