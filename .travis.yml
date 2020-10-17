@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: MIT
+---
+language: python
+python:
+  - 3.6
+  - 3.7
+  - 3.8
+  - 3.9-dev
+
+install:
+  - pip install tox tox-travis coveralls
+
+script:
+  - COVERALLS_PARALLEL=true COVERALLS_CMD=coveralls tox
+
+notifications:
+  webhooks: https://coveralls.io/webhook
