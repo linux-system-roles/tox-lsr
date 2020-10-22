@@ -1,0 +1,7 @@
+include LICENSE
+include *.md
+include pyproject.toml
+exclude .*
+exclude tox.ini
+prune stubs
+prune tests

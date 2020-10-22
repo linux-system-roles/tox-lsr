@@ -1,0 +1,6 @@
+.coverage
+*-coverage.txt
+*.egg-info
+__pycache__
+.eggs/
+.tox/
