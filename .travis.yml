@@ -1,17 +1,32 @@
 # SPDX-License-Identifier: MIT
 ---
 language: python
-python:
-  - 3.6
-  - 3.7
-  - 3.8
-  - 3.9-dev
+# getting this error from 2.7 coveralls
+# Could not submit coverage: 422 Client Error: Unprocessable Entity for url: https://coveralls.io/api/v1/jobs
+env:
+  global:
+    - COVERALLS_CMD=coveralls
+    - COVERALLS_PARALLEL=true
+matrix:
+  include:
+    - python: 2.6
+      dist: trusty
+      env:
+        - COVERALLS_CMD="echo skipping coveralls"
+        - SAFETY_CMD="echo skipping safety"
+    - python: 2.7
+      env:
+        - COVERALLS_CMD="echo skipping coveralls"
+    - python: 3.6
+    - python: 3.7
+    - python: 3.8
+    - python: 3.9
 
 install:
-  - pip install tox tox-travis coveralls
+  - pip install -rtravis-requirements.txt
 
 script:
-  - COVERALLS_PARALLEL=true COVERALLS_CMD=coveralls tox
+  - tox
 
 notifications:
   webhooks: https://coveralls.io/webhook

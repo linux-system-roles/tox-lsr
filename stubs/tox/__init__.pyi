@@ -9,4 +9,6 @@ from tox.config import Config
 
 _HFT = TypeVar("_HFT", bound=Callable[[Config], None])
 
-def hookimpl(trylast: bool = False) -> Callable[[_HFT], _HFT]: ...
+def hookimpl(
+    trylast: bool = False, tryfirst: bool = False
+) -> Callable[[_HFT], _HFT]: ...
