@@ -10,10 +10,15 @@ roles via `tox`. The default settings can be overridden by role developer in
 
 For local development, if you have already installed `tox` and `pip`:
 ```
-pip install --user git+https://github.com/linux-system-roles/tox-lsr@master
+pip install --user git+https://github.com/linux-system-roles/tox-lsr@main
 ```
 This will install `tox-lsr` in your `~/.local` directory where tox should find
-it.
+it.  If you want to use a release tagged version:
+```
+pip install --user git+https://github.com/linux-system-roles/tox-lsr@0.0.4
+```
+Look at https://github.com/linux-system-roles/tox-lsr/releases for the list of
+releases and tags.
 
 To confirm that you have it and that `tox` can use it:
 ```
@@ -59,6 +64,20 @@ If the plugin is not enabled, you would only see testenv definitions in your
 ## Configuration
 
 There are several ways to append to and override the default configuration.
+
+### Tox command line arguments
+
+All of the usual tox command line arguments work as you would expect.  The
+information returned is a result of merging your local tox.ini with the default,
+so flags like `-l` will return the default environments, `-e` can use the
+default environments, `--showconfig` will show the full merged config, etc.
+However, the `--skip-missing-interpreters` argument is ignored.  If you want to
+explicitly set this, you must add it to your local tox.ini:
+```
+[tox]
+skip_missing_interpreters = false
+```
+
 
 ### Standard tox.ini configuration
 

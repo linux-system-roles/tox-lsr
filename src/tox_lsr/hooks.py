@@ -186,6 +186,18 @@ def merge_config(config, default_config):
         # set in config if not set and it's set in default
         if propname in def_tox_sec and propname not in tox_sec:
             setattr(config, propname, getattr(default_config, propname))
+    # handle skip_missing_interpreters specially because
+    # it is stored in config.option
+    if (
+        "skip_missing_interpreters" not in tox_sec
+        and "skip_missing_interpreters" in def_tox_sec
+    ):
+        default_config.option.skip_missing_interpreters = def_tox_sec[
+            "skip_missing_interpreters"
+        ]
+        config.option.skip_missing_interpreters = (
+            default_config.option.skip_missing_interpreters
+        )
     # merge the top level config properties that are set implicitly
     if hasattr(config, "envlist_explicit") and not config.envlist_explicit:
         config.envlist_default = list(
