@@ -1,0 +1,4 @@
+tox<3 ; python_version < "2.7"
+virtualenv==15.* ; python_version < "2.7"
+pluggy==0.5.* ; python_version < "2.7"
+coveralls ; python_version > "2.6"
