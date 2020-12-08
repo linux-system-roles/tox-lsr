@@ -1,11 +1,9 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
 
-# Install package specified by user in LSR_EXTRA_PACKAGES. Executed by Travis
-# during before_install phase.
-#
-# LSR_EXTRA_PACKAGES, set by user in .travis/config.sh, is a space separated
-# list of packages to be installed on the Travis build environment (Ubuntu).
+# Install package specified by user in LSR_EXTRA_PACKAGES. Executed by CI
+# system during before_install phase.  This is a space separated
+# list of packages to be installed on the CI environment (Ubuntu).
 
 set -euo pipefail
 
