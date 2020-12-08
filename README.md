@@ -1,3 +1,4 @@
+![CI Status](https://github.com/linux-system-roles/auto-maintenance/workflows/tox/badge.svg)
 [![Coverage Status](https://coveralls.io/repos/github/linux-system-roles/tox-lsr/badge.svg?branch=main)](https://coveralls.io/github/linux-system-roles/tox-lsr?branch=main)
 
 # Linux System Roles Plugin for `tox`
