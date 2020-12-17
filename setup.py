@@ -34,12 +34,13 @@ setup(
     packages=find_packages("src"),
     package_dir={"": "src"},
     scripts=[
-        "src/tox_lsr/test_scripts/lsr_travis_preinstall",
-        "src/tox_lsr/test_scripts/lsr_travis_runtox",
+        "src/tox_lsr/test_scripts/lsr_ci_preinstall",
+        "src/tox_lsr/test_scripts/lsr_ci_runtox",
     ],
     package_data={"": ["config_files/*", "test_scripts/*"]},
     entry_points={
         "tox": ["lsr = tox_lsr.hooks"],
     },
     python_requires=">=2.6, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*",
+    install_requires=["tox", "configparser"],
 )

@@ -7,11 +7,16 @@ if [ -n "${DEBUG:-}" ] ; then
     set -x
 fi
 
-if [ "$LSR_TOX_ENV_NAME" = pylint ] && [ -n "${RUN_PYLINT_SETUP_MODULE_UTILS:-}" ]; then
-    : # pass
-elif [ "$LSR_TOX_ENV_NAME" = pytest ] && [ -n "${RUN_PYTEST_SETUP_MODULE_UTILS:-}" ]; then
-    : # pass
-else
+proceed=
+case "$LSR_TOX_ENV_NAME" in
+pylint) if [ -n "${RUN_PYLINT_SETUP_MODULE_UTILS:-}" ] ; then
+            proceed=true
+        fi ;;
+py[23]*) if [ -n "${RUN_PYTEST_SETUP_MODULE_UTILS:-}" ] ; then
+            proceed=true
+        fi ;;
+esac
+if [ -z "$proceed" ] ; then
     exit 0
 fi
 

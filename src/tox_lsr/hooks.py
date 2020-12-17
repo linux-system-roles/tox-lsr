@@ -77,7 +77,10 @@ class _LSRPath(py.path.local):
         if self.tmppath:
             call_stack = traceback.extract_stack()
             for filename, _, func, _ in call_stack:
-                if filename.endswith("iniconfig.py") and func == "__init__":
+                if (
+                    filename.endswith("iniconfig.py")
+                    or filename.endswith("iniconfig/__init__.py")
+                ) and func == "__init__":
                     return self.tmppath
         # pylint: disable=super-with-arguments
         return super(_LSRPath, self).__str__()
@@ -247,8 +250,8 @@ def tox_addoption(parser):
 
 
 # Run this hook *before* any other tox_configure hook,
-# especially the tox-travis one, because this plugin sets up the
-# environments that tox-travis may use
+# because this plugin sets up the environments that other plugins
+# may use
 @hookimpl(tryfirst=True)
 def tox_configure(config):
     # type: (Config) -> None

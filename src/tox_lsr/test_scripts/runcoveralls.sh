@@ -30,7 +30,7 @@ SCRIPTDIR=$(readlink -f "$(dirname "$0")")
 . "${SCRIPTDIR}/utils.sh"
 
 # Publish the results only if it is desired.
-if [[ -z "${LSR_PUBLISH_COVERAGE:-}" ]]; then
+if [[ -z "${GITHUB_TOKEN:-}" ]] || [[ -z "${LSR_PUBLISH_COVERAGE:-}" ]]; then
   lsr_info "${ME}: Publishing coverage report is not enabled. Skipping."
   exit 0
 fi
@@ -91,6 +91,4 @@ if [[ "${LSR_PUBLISH_COVERAGE}" == "debug" ]]; then
 fi
 
 set -x
-# https://github.com/koalaman/shellcheck/wiki/SC2086
-# shellcheck disable=SC2086
-coveralls ${MAYBE_DEBUG} "$@"
+python "$LSR_SCRIPTDIR/custom_coveralls.py"

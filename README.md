@@ -239,12 +239,14 @@ Then doing `tox -e flake8` would use your flake8.conf.
 
 ### Using setenv and environment variables
 
-Some of the environment variables we used in the old scripts are carried over:
+These environment variables can be set in your local tox.ini `testenv` section,
+or in your CI configuration e.g. `.github/workflows/tox.yml`.  Some of the
+environment variables we used in the old scripts are carried over:
 * `RUN_PYTEST_SETUP_MODULE_UTILS` - if set to an arbitrary non-empty value, the
-  environment will be configured so that tests of the module_utils/ code will be
+  environment will be configured so that tests of the `module_utils/` code will be
   run correctly
 * `RUN_PYLINT_SETUP_MODULE_UTILS` - if set to an arbitrary non-empty value, the
-  environment will be configured so that linting of the module_utils/ code will
+  environment will be configured so that linting of the `module_utils/` code will
   be run correctly
 * `RUN_FLAKE8_EXTRA_ARGS` - any extra command line arguments to provide e.g.
   `--ignore=some,errs`
@@ -252,9 +254,12 @@ Some of the environment variables we used in the old scripts are carried over:
   `--ignore=some,errs`
 * `RUN_BLACK_EXTRA_ARGS` - any extra command line arguments to provide e.g.
   `--ignore=some,errs`
-* `LSR_EXTRA_PACKAGES` - set in `.travis.yml`
-* `LSR_ANSIBLES` - set in `.travis.yml`
-* `LSR_MSCENARIOS` - set in `.travis.yml`
+* `LSR_EXTRA_PACKAGES` - set in `.github/workflows/tox.yml` - list of extra
+  packages to install in the CI environment (typically an Ubuntu variant)
+* `LSR_ANSIBLES` - set in `.github/workflows/tox.yml` - ansible versions to test
+  molecule against
+* `LSR_MSCENARIOS` - set in `.github/workflows/tox.yml` - molecule scenarios to
+  test
 * `LSR_MOLECULE_DOCKER_VERSION` - use this if you want to override the version
   of the `docker` pypi package - otherwise, the correct version will be
   auto-detected
@@ -266,15 +271,17 @@ Some of the environment variables we used in the old scripts are carried over:
     * `normal` - coverage results will be reported normally
 * `LSR_TESTSDIR` - a path to directory where tests and tests artifacts are
   located; if unset or empty, this variable is set to `${TOPDIR}/tests` - this
-  path should already exists and be populated with tests artifacts before the
+  path should already exist and be populated with tests artifacts before the
   script starts performing actions on it
 
 There are some new variables which can be set via `setenv` in `tox.ini` or via
 environment variables:
 * `RUN_PYTEST_EXTRA_ARGS` - extra command line arguments to provide to pytest
 * `RUN_PYLINT_EXTRA_ARGS` - extra command line arguments to provide to pylint
-* `RUN_YAMLLINT_EXTRA_ARGS` - extra command line arguments to provide to yamllint
-* `RUN_ANSIBLE_LINT_EXTRA_ARGS` - extra command line arguments to provide to ansible-lint
+* `RUN_YAMLLINT_EXTRA_ARGS` - extra command line arguments to provide to
+  yamllint
+* `RUN_ANSIBLE_LINT_EXTRA_ARGS` - extra command line arguments to provide to
+  ansible-lint
 
 These environment variables have been removed:
 * `RUN_PYLINT_INCLUDE` - use `RUN_PYLINT_EXTRA_ARGS`
