@@ -10,7 +10,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="tox-lsr",
-    version="0.0.3",
+    version="1.0.1",
     url="https://github.com/linux-system-roles/tox-lsr",
     description="A tox plugin for testing Linux system roles",
     long_description_content_type="text/markdown",
