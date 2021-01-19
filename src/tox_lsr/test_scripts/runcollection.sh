@@ -12,6 +12,8 @@ SCRIPTDIR=$(readlink -f "$(dirname "$0")")
 # Collection commands that are run when `tox -e collection`:
 role=$(basename "${TOPDIR}")
 STABLE_TAG=${2:-master}
+LSR_ROLE2COLL_NAMESPACE="${LSR_ROLE2COLL_NAMESPACE:-fedora}"
+LSR_ROLE2COLL_NAME="${LSR_ROLE2COLL_NAME:-linux_system_roles}"
 cd "$LSR_TOX_ENV_DIR"
 testlist="yamllint,black,flake8,shellcheck"
 # py38 - pyunit testing is not yet supported
@@ -20,7 +22,9 @@ testlist="yamllint,black,flake8,shellcheck"
 automaintenancerepo=https://raw.githubusercontent.com/linux-system-roles/auto-maintenance/
 curl -s -L -o lsr_role2collection.py "${automaintenancerepo}${STABLE_TAG}"/lsr_role2collection.py
 
-python lsr_role2collection.py --src-path "$TOPDIR/.." --dest-path "$LSR_TOX_ENV_DIR" --role "$role" > "$LSR_TOX_ENV_DIR"/collection.out 2>&1
+python lsr_role2collection.py --src-path "$TOPDIR/.." --dest-path "$LSR_TOX_ENV_DIR" --role "$role" \
+  --namespace "${LSR_ROLE2COLL_NAMESPACE}" --collection "${LSR_ROLE2COLL_NAME}" \
+  > "$LSR_TOX_ENV_DIR"/collection.out 2>&1
 
 line_length_warning() {
     python -c 'import sys
@@ -38,7 +42,7 @@ cfg.write(open(sys.argv[1], "w"))
 ' "$1"
 }
 
-cd ansible_collections/fedora/system_roles
+cd ansible_collections/"${LSR_ROLE2COLL_NAMESPACE}"/"${LSR_ROLE2COLL_NAME}"
 # customize yamllint processing - make line-length reporting a warning
 if [ ! -f tox.ini ]; then
     touch tox.ini
@@ -47,7 +51,7 @@ line_length_warning tox.ini
 
 # unit testing not working yet - will need these and more
 #export RUN_PYTEST_UNIT_DIR="$role/unit"
-#export PYTHONPATH="$LSR_TOX_ENV_DIR/ansible_collections/fedora/system_roles/plugins/modules:$LSR_TOX_ENV_DIR/ansible_collections/fedora/system_roles/plugins/module_utils"
+#export PYTHONPATH="$LSR_TOX_ENV_DIR/ansible_collections/"${LSR_ROLE2COLL_NAME}"/"${LSR_ROLE2COLL_NAME}"/plugins/modules:$LSR_TOX_ENV_DIR/ansible_collections/"${LSR_ROLE2COLL_NAME}"/"${LSR_ROLE2COLL_NAME}"/plugins/module_utils"
 tox -e "$testlist" 2>&1 | tee "$LSR_TOX_ENV_DIR"/collection.tox.out || :
 
 rm -rf "${LSR_TOX_ENV_DIR}"/auto-maintenance "$LSR_TOX_ENV_DIR"/ansible_collections

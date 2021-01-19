@@ -282,6 +282,12 @@ environment variables:
   yamllint
 * `RUN_ANSIBLE_LINT_EXTRA_ARGS` - extra command line arguments to provide to
   ansible-lint
+* `LSR_ROLE2COLL_VERSION` - a tag/commit of the lsr_role2collection script to
+  use for the collection tox test.  The default is the latest stable version.
+* `LSR_ROLE2COLL_NAMESPACE` - namespace to use for the lsr_role2collection
+  script.  The default is `fedora`.
+* `LSR_ROLE2COLL_NAME` - collection name to use for the lsr_role2collection
+  script.  The default is `linux_system_roles`.
 
 These environment variables have been removed:
 * `RUN_PYLINT_INCLUDE` - use `RUN_PYLINT_EXTRA_ARGS`
