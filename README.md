@@ -29,6 +29,11 @@ usage: tox [--lsr-enable] [--version] [-h] [--help-ini] [-v] [-q]
 ```
 This shows that the `--lsr-enable` flag is available.
 
+### Molecule and Ansible Version Support
+
+tox-lsr 2.0 and later use molecule v3, which support Ansible 2.8 and later.  If
+for some reason you need to support Ansible 2.7 or earlier, use tox-lsr 1.x.
+
 ## Example tox.ini
 
 The following is an example of a `tox.ini` from the kernel_settings role:
@@ -78,7 +83,6 @@ explicitly set this, you must add it to your local tox.ini:
 [tox]
 skip_missing_interpreters = false
 ```
-
 
 ### Standard tox.ini configuration
 
@@ -257,12 +261,19 @@ environment variables we used in the old scripts are carried over:
 * `LSR_EXTRA_PACKAGES` - set in `.github/workflows/tox.yml` - list of extra
   packages to install in the CI environment (typically an Ubuntu variant)
 * `LSR_ANSIBLES` - set in `.github/workflows/tox.yml` - ansible versions to test
-  molecule against
+  molecule against in the form that is used with pip e.g. use
+  `LSR_ANSIBLES='ansible==2.8.* ansible==2.9.*'` to use ansible 2.8 and ansible
+  2.9.  Only ansible 2.8 and higher are supported. tox-lsr 2.0 uses molecule v3,
+  which does not work with ansible 2.7 or earlier.
 * `LSR_MSCENARIOS` - set in `.github/workflows/tox.yml` - molecule scenarios to
   test
-* `LSR_MOLECULE_DOCKER_VERSION` - use this if you want to override the version
-  of the `docker` pypi package - otherwise, the correct version will be
-  auto-detected
+* `LSR_MOLECULE_DRIVER` - default `docker` - The molecule driver to use.  If you
+  want to use `podman`, use `LSR_MOLECULE_DRIVER=podman`
+* `LSR_MOLECULE_DRIVER_VERSION` - default empty - use this if you want to
+  override the version of the molecule driver pypi package - otherwise, the
+  correct version will be auto-detected.  E.g.
+  `LSR_MOLECULE_DRIVER=podman LSR_MOLECULE_DRIVER_VERSION='<4.4'` will evaluate
+  to something like `pip install podman<4.4`
 * `LSR_PUBLISH_COVERAGE` - If the variable is unset or empty (the default), no
   coverage is published.  Other valid values for the variable are:
     * `strict` - the reporting is performed in strict mode, so situations like
