@@ -328,3 +328,13 @@ lsr_some_shell_func ....
   etc.
 * `LSR_TOX_ENV_DIR` - the full path to the directory for the test environment
   e.g. `/path/to/ROLENAME/.tox/env-3.8`
+* `LSR_ROLE2COLL_RUN_ANSIBLE_TESTS` - if set to `true`, ansible-doc and ansible-test
+  are called in the collection test.
+  To enable it in the command line:
+  ```
+  LSR_ROLE2COLL_RUN_ANSIBLE_TESTS=true tox -e collection
+  ```
+  Set the var in .github/workflows/tox.yml to run in CI:
+  ```
+  LSR_ROLE2COLL_RUN_ANSIBLE_TESTS: true
+  ```
