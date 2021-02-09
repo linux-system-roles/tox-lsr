@@ -31,7 +31,7 @@ curl -s -L -o lsr_role2collection.py "${automaintenancerepo}${STABLE_TAG}"/lsr_r
 
 python lsr_role2collection.py --src-path "$TOPDIR/.." --dest-path "$MY_LSR_TOX_ENV_DIR" --role "$role" \
   --namespace "${LSR_ROLE2COLL_NAMESPACE}" --collection "${LSR_ROLE2COLL_NAME}" \
-  > "$MY_LSR_TOX_ENV_DIR"/collection.out 2>&1
+  2>&1 | tee "$MY_LSR_TOX_ENV_DIR"/collection.out
 
 line_length_warning() {
     python -c 'import sys
