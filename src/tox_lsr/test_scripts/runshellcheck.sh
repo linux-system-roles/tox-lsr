@@ -41,5 +41,5 @@ set -x
 # shellcheck disable=SC2086
 # https://github.com/koalaman/shellcheck/wiki/SC2038
 # shellcheck disable=SC2038
-find \( -name .tox -prune \) -o \( -name .venv -prune \) -o -name \*.sh -print | \
-  xargs shellcheck ${RUN_SHELLCHECK_EXTRA_ARGS:-} -e SC1090
+find \( -name .tox -prune \) -o \( -name .venv -prune \) -o -name \*.sh -exec \
+  shellcheck ${RUN_SHELLCHECK_EXTRA_ARGS:-} -e SC1090 '{}' \;

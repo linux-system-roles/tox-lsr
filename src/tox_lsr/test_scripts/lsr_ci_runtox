@@ -37,7 +37,7 @@ export LSR_MOLECULE_DRIVER_VERSION
 . "$SCRIPTDIR/utils.sh"
 
 lsr_banner tox "$BANNERSIZE"
-(set -x; tox); error_code="$?"
+(set -x; tox) || error_code="$?"
 
 # Exit prematurely if the environment is not suitable for running
 # Molecule tests.
