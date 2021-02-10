@@ -301,6 +301,9 @@ environment variables:
   script.  The default is `linux_system_roles`.
 * `LSR_ROLE2COLL_RUN_ANSIBLE_TESTS` - if set to `true`, ansible-doc and
   ansible-test are called in the collection test.  The default is `false`.
+* `RUN_BLACK_CONFIG_FILE` - path to config file to use instead of the default
+* `RUN_FLAKE8_CONFIG_FILE` - path to config file to use instead of the default
+* `RUN_YAMLLINT_CONFIG_FILE` - path to config file to use instead of the default
 
 These environment variables have been removed:
 * `RUN_PYLINT_INCLUDE` - use `RUN_PYLINT_EXTRA_ARGS`
