@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: MIT
+---
+extends: default
+ignore: |
+  /.tox/
+  /tests/storage/
+rules:
+  line-length: disable
+  truthy: disable
+  braces:
+    max-spaces-inside: 1
+    level: error
+  brackets:
+    max-spaces-inside: 1
+    level: error
+  document-start: disable
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
