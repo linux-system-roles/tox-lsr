@@ -43,6 +43,8 @@ tox --workdir "$TOXINIDIR/.tox" -e "$testlist" 2>&1 | tee "$MY_LSR_TOX_ENV_DIR"/
 
 rval=0
 if [ "${LSR_ROLE2COLL_RUN_ANSIBLE_TESTS:-}" = "true" ]; then
+    # ansible-test needs meta data
+    curl -s -L -o galaxy.yml "${automaintenancerepo}${STABLE_TAG}"/galaxy.yml
     if ! ${SCRIPTDIR}/runansible-doc.sh; then
         rval=1
     fi
