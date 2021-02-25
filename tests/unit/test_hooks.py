@@ -128,6 +128,11 @@ class HooksTestCase(unittest2.TestCase):
         config._cfg = py.iniconfig.IniConfig(tox_ini_file)
         result = merge_ini(config, self.default_tox_ini_raw)
         # check the result
+        if os.environ.get("UPDATE_RESULT_INI"):
+            with open(
+                os.path.join(self.fixture_path, "result.ini"), "w"
+            ) as out_f:
+                out_f.write(result)
         expected_file = os.path.join(self.fixture_path, "result.ini")
         expected_ini = py.iniconfig.IniConfig(expected_file)
         result_ini = py.iniconfig.IniConfig("", result)

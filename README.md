@@ -299,8 +299,16 @@ environment variables:
   script.  The default is `fedora`.
 * `LSR_ROLE2COLL_NAME` - collection name to use for the lsr_role2collection
   script.  The default is `linux_system_roles`.
-* `LSR_ROLE2COLL_RUN_ANSIBLE_TESTS` - if set to `true`, ansible-doc and
-  ansible-test are called in the collection test.  The default is `false`.
+* `LSR_ANSIBLE_TEST_DEBUG` - if set to `true`, `ansible-test` will produce
+  additional output for debugging purposes.  The default is `false`.
+* `LSR_ANSIBLE_TEST_TESTS` - a space delimited list of `ansible-test` tests to
+  run.  See `ansible-test sanity --list-tests` for the tests you can run. See
+  also `LSR_ANSIBLE_DOC_DEBUG`.
+* `LSR_ANSIBLE_DOC_DEBUG` - if set to `true`, `ansible-test` will produce
+  additional output when running the `ansible-doc` test.  The default is
+  `false`. This is very useful when working on the docs for a plugin or module
+  and you want to see how it renders, and you don't want any other tests to run.
+  See also `Working on collections docs` below.
 * `RUN_BLACK_CONFIG_FILE` - path to config file to use instead of the default
 * `RUN_FLAKE8_CONFIG_FILE` - path to config file to use instead of the default
 * `RUN_YAMLLINT_CONFIG_FILE` - path to config file to use instead of the default
@@ -333,3 +341,15 @@ lsr_some_shell_func ....
   etc.
 * `LSR_TOX_ENV_DIR` - the full path to the directory for the test environment
   e.g. `/path/to/ROLENAME/.tox/env-3.8`
+
+### Working on collections docs
+
+It can be tricky to get the plugin and module docs to render correctly.  Use a
+workflow like this:
+```
+> LSR_ANSIBLE_TEST_DEBUG=true LSR_ANSIBLE_TEST_TESTS=ansible-doc \
+  tox -e collection,ansible-test
+```
+This will convert your role to a collection, run `ansible-test` with only the
+`ansible-doc` test, and dump what the converted doc looks like, or dump errors
+if your doc could not be rendered correctly.

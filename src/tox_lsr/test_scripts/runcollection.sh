@@ -12,50 +12,36 @@ SCRIPTDIR=$(readlink -f "$(dirname "$0")")
 
 # Collection commands that are run when `tox -e collection`:
 role=$(basename "${TOPDIR}")
-STABLE_TAG=${2:-master}
-export LSR_ROLE2COLL_NAMESPACE="${LSR_ROLE2COLL_NAMESPACE:-fedora}"
-export LSR_ROLE2COLL_NAME="${LSR_ROLE2COLL_NAME:-linux_system_roles}"
+STABLE_TAG=${1:-master}
 
-# Since .tox is in .gitignore, ansible-test is skipped
-# if the collection path is in LSR_TOX_ENV_DIR.
-# Using a temp dir outside of .tox.
-export MY_LSR_TOX_ENV_DIR=$( mktemp -d -t tox-XXXXXXXX )
-trap "rm -rf ${MY_LSR_TOX_ENV_DIR}" 0
-cd "$MY_LSR_TOX_ENV_DIR"
 testlist="yamllint,flake8,shellcheck"
 # py38 - pyunit testing is not yet supported
 #testlist="${testlist},py38"
 
 automaintenancerepo=https://raw.githubusercontent.com/linux-system-roles/auto-maintenance/
-curl -s -L -o lsr_role2collection.py "${automaintenancerepo}${STABLE_TAG}"/lsr_role2collection.py
+curl -s -L -o "$LSR_TOX_ENV_DIR/tmp/lsr_role2collection.py" "${automaintenancerepo}${STABLE_TAG}"/lsr_role2collection.py
 
-python lsr_role2collection.py --src-path "$TOPDIR/.." --dest-path "$MY_LSR_TOX_ENV_DIR" --role "$role" \
-  --namespace "${LSR_ROLE2COLL_NAMESPACE}" --collection "${LSR_ROLE2COLL_NAME}" \
-  2>&1 | tee "$MY_LSR_TOX_ENV_DIR"/collection.out
+rm -rf "$TOX_WORK_DIR/ansible_collections"
+python "$LSR_TOX_ENV_DIR/tmp/lsr_role2collection.py" --src-path "$TOPDIR/.." --dest-path "$TOX_WORK_DIR" \
+  --role "$role" --namespace "${LSR_ROLE2COLL_NAMESPACE}" --collection "${LSR_ROLE2COLL_NAME}" \
+  2>&1 | tee "$TOX_ENV_DIR/collection.out"
 
-cd ansible_collections/"${LSR_ROLE2COLL_NAMESPACE}"/"${LSR_ROLE2COLL_NAME}"
+# create the collection in this dir to share with other testenvs
+cd "$TOX_WORK_DIR/ansible_collections/$LSR_ROLE2COLL_NAMESPACE/$LSR_ROLE2COLL_NAME"
 
 # unit testing not working yet - will need these and more
 #export RUN_PYTEST_UNIT_DIR="$role/unit"
 #export PYTHONPATH="$MY_LSR_TOX_ENV_DIR/ansible_collections/"${LSR_ROLE2COLL_NAME}"/"${LSR_ROLE2COLL_NAME}"/plugins/modules:$MY_LSR_TOX_ENV_DIR/ansible_collections/"${LSR_ROLE2COLL_NAME}"/"${LSR_ROLE2COLL_NAME}"/plugins/module_utils"
 RUN_YAMLLINT_CONFIG_FILE="$LSR_CONFIGDIR/collection_yamllint.yml" \
-tox --workdir "$TOXINIDIR/.tox" -e "$testlist" 2>&1 | tee "$MY_LSR_TOX_ENV_DIR"/collection.tox.out || :
+TOXENV="" tox --workdir "$TOXINIDIR/.tox" -e "$testlist" 2>&1 | tee "$TOX_ENV_DIR/collection.tox.out" || :
 
-rval=0
-if [ "${LSR_ROLE2COLL_RUN_ANSIBLE_TESTS:-}" = "true" ]; then
-    # ansible-test needs meta data
-    curl -s -L -o galaxy.yml "${automaintenancerepo}${STABLE_TAG}"/galaxy.yml
-    if ! ${SCRIPTDIR}/runansible-doc.sh; then
-        rval=1
-    fi
-    if ! ${SCRIPTDIR}/runansible-test.sh; then
-        rval=1
-    fi
+if grep "^ERROR: .*failed" "$TOX_ENV_DIR/collection.tox.out"; then
+  lsr_error "${ME}: Some tests failed when run against the converted collection.
+  This usually indicates either a problem with the collection conversion,
+  or additional error suppressions are needed."
 fi
 
-cd "${TOPDIR}"
-res=$( grep "^ERROR: .*failed" "$MY_LSR_TOX_ENV_DIR"/collection.tox.out || : )
-if [ "$res" != "" -o $rval -ne 0 ]; then
-    lsr_error "${ME}: tox in the converted collection format failed."
-    exit 1
-fi
+# ansible-test needs meta data
+curl -s -L -o galaxy.yml "${automaintenancerepo}${STABLE_TAG}/galaxy.yml"
+
+exit 0
