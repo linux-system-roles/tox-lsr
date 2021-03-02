@@ -215,8 +215,10 @@ function lsr_setup_module_utils() {
 }
 
 # set TOPDIR
+# shellcheck disable=SC2034
 ME=${ME:-"$(basename "$0")"}
 SCRIPTDIR=${SCRIPTDIR:-$(readlink -f "$(dirname "$0")")}
+# shellcheck disable=SC2034
 TOPDIR=${TOXINIDIR:-$(readlink -f "${SCRIPTDIR}/..")}
 
 # Local Variables:

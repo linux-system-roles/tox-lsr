@@ -85,8 +85,10 @@ EOF
 mv "${COVERAGEFILE}" "${COVERAGEFILE}.merge"
 python -m coverage combine --append
 
+# shellcheck disable=SC2034
 MAYBE_DEBUG=""
 if [[ "${LSR_PUBLISH_COVERAGE}" == "debug" ]]; then
+  # shellcheck disable=SC2034
   MAYBE_DEBUG=debug
 fi
 
