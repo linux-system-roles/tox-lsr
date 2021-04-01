@@ -30,7 +30,7 @@ if [ "${LSR_ANSIBLE_TEST_DEBUG:-false}" = true ]; then
   truncate_val="0"
   default_v_arg="-vv"
   ansible_test_filter() {
-    : ;
+    cat
   }
 else
   default_v_arg=""
@@ -63,6 +63,11 @@ for file in "$TOXINIDIR"/.sanity-ansible-ignore-*.txt; do
     cp "$file" "tests/sanity/${file//*.sanity-ansible-}"
   fi
 done
+
+if [ "${LSR_ANSIBLE_TEST_DOCKER:-false}" = true ]; then
+  ansible-test sanity --docker 2>&1 | ansible_test_filter
+  exit 0
+fi
 
 # remove the current venv from PATH
 if [ -n "${VIRTUAL_ENV:-}" ] && [[ "${PATH}" == "${VIRTUAL_ENV:-}/bin:"* ]]; then
