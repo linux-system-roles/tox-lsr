@@ -312,6 +312,8 @@ environment variables:
 * `RUN_BLACK_CONFIG_FILE` - path to config file to use instead of the default
 * `RUN_FLAKE8_CONFIG_FILE` - path to config file to use instead of the default
 * `RUN_YAMLLINT_CONFIG_FILE` - path to config file to use instead of the default
+* `LSR_ANSIBLE_TEST_DOCKER` - if set to `true`, `ansible-test` will be run with
+  `--docker`
 
 These environment variables have been removed:
 * `RUN_PYLINT_INCLUDE` - use `RUN_PYLINT_EXTRA_ARGS`
