@@ -8,6 +8,7 @@ import io
 
 from setuptools import find_packages, setup
 
+# pylint: disable=R1732
 setup(
     name="tox-lsr",
     version="2.4.0",

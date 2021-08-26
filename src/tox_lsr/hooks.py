@@ -310,15 +310,11 @@ def tox_configure(config):
         )
         default_config._parser = config._parser
         default_config._testenv_attr = config._testenv_attr
-    tox_ini_tmp = NamedTemporaryFile(delete=False)
-    try:
-        with open(tox_ini_tmp.name, "w") as tox_ini_tmp_f:
-            tox_ini_tmp_f.write(lsr_default)
+    with NamedTemporaryFile(mode="w") as tox_ini_tmp:
+        tox_ini_tmp.write(lsr_default)
         lsr_path = _LSRPath(config.toxinipath, tox_ini_tmp.name)
         try:
             _ = ParseIni(default_config, lsr_path, None)
         except TypeError:  # old version of tox
             _ = ParseIni(default_config, lsr_path)
         merge_config(config, default_config)
-    finally:
-        os.unlink(tox_ini_tmp.name)
