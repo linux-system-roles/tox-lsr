@@ -130,7 +130,9 @@ class HooksTestCase(unittest2.TestCase):
         # check the result
         if os.environ.get("UPDATE_RESULT_INI"):
             with open(
-                os.path.join(self.fixture_path, "result.ini"), "w"
+                os.path.join(self.fixture_path, "result.ini"),
+                "w",
+                encoding="utf-8",
             ) as out_f:
                 out_f.write(result)
         expected_file = os.path.join(self.fixture_path, "result.ini")
