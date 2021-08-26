@@ -355,3 +355,100 @@ workflow like this:
 This will convert your role to a collection, run `ansible-test` with only the
 `ansible-doc` test, and dump what the converted doc looks like, or dump errors
 if your doc could not be rendered correctly.
+
+### QEMU testing
+
+Integration tests are run using qemu/kvm using the test playbooks in the
+`tests/` directory, using the `standard-inventory-qcow2` script to create a VM
+and an Ansible inventory. There are two test envs that can be used to run these
+tests:
+* `qemu` - tests against the latest version of ansible supported by the roles
+* `qemu-ansible-core-2.11` - tests against ansible-core 2.11
+
+These tests run in one of two modes, depending on which of the following
+arguments you provide:
+* `--image-file` - this is the full path to a local qcow2 image file.  This
+  assumes you have already downloaded the image to a local directory.  The
+  corresponding environment variable is `LSR_QEMU_IMAGE_FILE`.
+* `--image-name` - assuming you have a config file (`--config`) that maps the
+  given image name to an image url and optional setup, you can just specify an
+  image name like `--image-name fedora-34` and the script will download the
+  latest qcow2 compose image for Fedora 34 to a local cache (`--cache`).  The
+  script will check to see if the downloaded image in the cache is the latest,
+  and will not download if not needed.  In the config file you can specify
+  additional setup steps to be run e.g. setting up additional dnf/yum repos.
+  The corresponding environment variable is `LSR_QEMU_IMAGE_NAME`.
+* `--image-alias` - no default - Use this if you cannot use the full path to the
+  image for the hostname in the inventory.  If you use the special value
+  `BASENAME` the basename of the image path/file will be used.  The
+  corresponding environment variable is `LSR_QEMU_IMAGE_ALIAS`.
+* `--config` - default `$HOME/.config/linux-system-roles.json` - this is the
+  full path to a config file that lists the image names, the source or compose,
+  and additional setup steps.  The corresponding environment variable is
+  `LSR_QEMU_CONFIG`.
+* `--cache` - default `$HOME/.cache/linux-system-roles` - this is the directory
+  where the downloaded qcow2 images will be cached - be sure this partition has
+  a lot of space if you plan on downloading multiple images.  The corresponding
+  environment variable is `LSR_QEMU_CACHE`.
+* `--inventory` - default
+  `/usr/share/ansible/inventory/standard-inventory-qcow2` - this is useful to
+  set if you are working on the inventory script and want to use your local
+  clone.  The corresponding environment variable is `LSR_QEMU_INVENTORY`.
+* `--debug` - This uses the `TEST_DEBUG=true` for `standard-inventory-qcow2` so
+  that you can debug the VM.  The corresponding environment variable is
+  `LSR_QEMU_DEBUG`.
+
+Each additional command line argument is assumed to be a test playbook.  If the
+given playbook cannot be found in the current directory, the script will look
+for the playbook in the `tests/` directory.  The corresponding environment
+variable is `LSR_QEMU_PLAYBOOKS`.  Each space delimited item in the env. var.
+can be a glob pattern.  The current working directory of the playbook run will
+be the directory containing the playbook, so it will honor settings in your
+`provision.fmf`.  The script will run all of the given test playbooks in the
+same VM, sequentially - it will *not* create a new VM for each playbook.
+
+The config file looks like this:
+```
+{
+    "images": [
+    {
+      "name": "fedora-34",
+      "compose": "https://kojipkgs.fedoraproject.org/compose/cloud/latest-Fedora-Cloud-34/compose/",
+      "setup": [
+        {
+          "name": "Enable HA repos",
+          "hosts": "all",
+          "become": true,
+          "gather_facts": false,
+          "tasks": [
+            { "name": "Enable HA repos",
+              "command": "dnf config-manager --set-enabled ha"
+            }
+          ]
+        }
+      ]
+    },
+    ...
+}
+```
+
+Example:
+```
+~/.local/bin/tox -e qemu -- --image-name fedora-34 tests/tests_default.yml
+```
+This will lookup `fedora-34` in your `~/.config/linux-system-roles.json`, will
+check if it needs to download a new image to `~/.cache/linux-system-roles`, will
+create a setup playbook based on the `"setup"` section in the config, and will
+run `ansible-playbook` with `standard-inventory-qcow2` as the inventory script
+with `tests/tests_default.yml`.
+
+The environment variables are useful for customizing in your local tox.ini.  For
+example, if I want to use a custom location for my config and cache, and I want
+to always use the `ANSIBLE_STDOUT_CALLBACK=debug`, I can do this:
+```
+[qemu_common]
+setenv =
+    LSR_QEMU_CONFIG = /home/username/myconfig.json
+    LSR_QEMU_CACHE = /my/big/partition
+    ANSIBLE_STDOUT_CALLBACK = debug
+```
