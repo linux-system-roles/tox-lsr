@@ -3,12 +3,9 @@
 
 import argparse
 import errno
-import glob
 import json
 import logging
 import os
-import re
-import shlex
 import shutil
 import subprocess  # nosec
 import sys
@@ -279,7 +276,6 @@ def run_ansible_playbooks(args, image, setup_yml):
         test_env["TEST_HOSTALIASES"] = args.image_alias
     if args.collection:
         test_env["ANSIBLE_COLLECTIONS_PATHS"] = args.collection_base_path
-        role = os.path.basename(os.environ["TOXINIDIR"])
     test_env.update(dict(os.environ))
 
     if args.artifacts:
@@ -315,7 +311,10 @@ def run_ansible_playbooks(args, image, setup_yml):
             "ansible-playbook",
             "-vv",
             f"--inventory={args.inventory}",
-        ] + ansible_args + [setup_yml] + playbooks,
+        ]
+        + ansible_args
+        + [setup_yml]
+        + playbooks,
         env=test_env,
         cwd=cwd,
     )
@@ -395,7 +394,9 @@ def main():
     parser.add_argument(
         "--collection",
         action="store_true",
-        default=bool(strtobool(os.environ.get("LSR_QEMU_COLLECTION", "False"))),
+        default=bool(
+            strtobool(os.environ.get("LSR_QEMU_COLLECTION", "False"))
+        ),
         help="Run against a collection instead of a role.",
     )
     # any remaining args are assumed to be ansible-playbook args or playbooks
