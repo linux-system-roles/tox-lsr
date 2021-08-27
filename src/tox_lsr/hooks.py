@@ -310,8 +310,13 @@ def tox_configure(config):
         )
         default_config._parser = config._parser
         default_config._testenv_attr = config._testenv_attr
-    with NamedTemporaryFile(mode="w") as tox_ini_tmp:
+    with NamedTemporaryFile(
+        mode="w",
+        prefix="tox-lsr-",
+        suffix=".ini",
+    ) as tox_ini_tmp:
         tox_ini_tmp.write(lsr_default)
+        tox_ini_tmp.flush()
         lsr_path = _LSRPath(config.toxinipath, tox_ini_tmp.name)
         try:
             _ = ParseIni(default_config, lsr_path, None)
