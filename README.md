@@ -366,7 +366,14 @@ tests:
 * `qemu-ansible-core-2.11` - tests against ansible-core 2.11
 
 These tests run in one of two modes, depending on which of the following
-arguments you provide:
+arguments you provide.  Note that you must use `--` on the command line after
+the `-e qemu` or `-e qemu-ansible-core-2.11` so that `tox` will not attempt to
+interpret these as `tox` arguments:
+```
+tox -e qemu -- --image-name fedora-34 ...
+```
+You must provide one of `--image-file` or `--image-name`.
+
 * `--image-file` - this is the full path to a local qcow2 image file.  This
   assumes you have already downloaded the image to a local directory.  The
   corresponding environment variable is `LSR_QEMU_IMAGE_FILE`.
@@ -394,18 +401,31 @@ arguments you provide:
   `/usr/share/ansible/inventory/standard-inventory-qcow2` - this is useful to
   set if you are working on the inventory script and want to use your local
   clone.  The corresponding environment variable is `LSR_QEMU_INVENTORY`.
+* `--collection` - This tells the script that the given playbook should be run
+  in the context of a collection.  You must have already created the collection
+  first e.g. by using `tox -e collection`.  The corresponding environment
+  variable is `LSR_QEMU_COLLECTION`.
 * `--debug` - This uses the `TEST_DEBUG=true` for `standard-inventory-qcow2` so
   that you can debug the VM.  The corresponding environment variable is
   `LSR_QEMU_DEBUG`.
 
-Each additional command line argument is assumed to be a test playbook.  If the
-given playbook cannot be found in the current directory, the script will look
-for the playbook in the `tests/` directory.  The corresponding environment
-variable is `LSR_QEMU_PLAYBOOKS`.  Each space delimited item in the env. var.
-can be a glob pattern.  The current working directory of the playbook run will
-be the directory containing the playbook, so it will honor settings in your
-`provision.fmf`.  The script will run all of the given test playbooks in the
-same VM, sequentially - it will *not* create a new VM for each playbook.
+Each additional command line argument is passed through to ansible-playbook, so
+it must either be an argument or a playbook.  If you want to pass both arguments
+and playbooks, separate them with a `--` on the command line:
+```
+tox -e qemu -- --image-name fedora-34 --become --become-user root -- tests_default.yml
+```
+If you do not have any ansible-playbook arguments, only playbooks, you can omit
+the `--`:
+```
+tox -e qemu -- --image-name fedora-34 tests_default.yml
+```
+If using `--collection`, it is assumed you used `tox -e collection` first.  Then
+specify the path to the test playbook inside this collection:
+```
+tox -e collection
+tox -e qemu -- --image-name fedora-34 --collection .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
+```
 
 The config file looks like this:
 ```
@@ -434,7 +454,7 @@ The config file looks like this:
 
 Example:
 ```
-~/.local/bin/tox -e qemu -- --image-name fedora-34 tests/tests_default.yml
+tox -e qemu -- --image-name fedora-34 tests/tests_default.yml
 ```
 This will lookup `fedora-34` in your `~/.config/linux-system-roles.json`, will
 check if it needs to download a new image to `~/.cache/linux-system-roles`, will

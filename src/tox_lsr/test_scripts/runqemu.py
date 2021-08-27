@@ -7,6 +7,7 @@ import glob
 import json
 import logging
 import os
+import re
 import shlex
 import shutil
 import subprocess  # nosec
@@ -190,11 +191,9 @@ def get_image(images, image_name):
     return None
 
 
-def make_setup_yml(image):
-    """Make a temp setup.yml to setup the VM."""
-    setup_yml = tempfile.NamedTemporaryFile(
-        prefix="lsr_setup_", suffix=".yml", mode="w", delete=False
-    )
+def make_setup_yml(image, args):
+    """Make a setup.yml to setup the VM.  Keep in cache."""
+    setup_yml = os.path.join(args.cache, image["name"] + "_setup.yml")
     inventory_fail_msg = "ERROR: Inventory is empty, tests did not run"
     fail_localhost = {
         "name": "Fail when only localhost is available",
@@ -222,57 +221,120 @@ def make_setup_yml(image):
         else:
             setup_plays.extend(image["setup"])
 
-    yaml.safe_dump(setup_plays, setup_yml.file)
-    setup_yml.file.close()
-    return setup_yml.name
+    with open(setup_yml, "w") as syf:
+        yaml.safe_dump(setup_plays, syf)
+    return setup_yml
 
 
-def run_test_playbooks(args, image, setup_yml):
-    """Run the test playbooks."""
-    testenv = {
+def get_image_config(args):
+    """Get the image to use."""
+    images = {}
+
+    with open(args.config) as configfile:
+        config = json.load(configfile)
+        images = config["images"]
+
+    if args.image_name:
+        image = get_image(images, args.image_name)
+        if not image:
+            logging.critical(
+                "Given image %s not found in config %s.",
+                args.image_name,
+                args.config,
+            )
+            sys.exit(1)
+        image_url = get_url(image)
+        if not image_url:
+            logging.critical(
+                "Could not determine download URL for %s from %s.",
+                args.image_name,
+                str(image),
+            )
+            sys.exit(1)
+        image_path = fetch_image(image_url, args.cache, image["name"])
+        if not image_path:
+            logging.critical(
+                "Could not download image %s from URL %s.",
+                args.image_name,
+                image_url,
+            )
+            sys.exit(1)
+        image["file"] = image_path
+    else:
+        image = {
+            "name": os.path.basename(args.image_file),
+            "file": args.image_file,
+        }
+    return image
+
+
+def run_ansible_playbooks(args, image, setup_yml):
+    """Run the given playbooks."""
+    test_env = {
         "TEST_SUBJECTS": image["file"],
     }
     if args.debug:
-        testenv["TEST_DEBUG"] = "true"
+        test_env["TEST_DEBUG"] = "true"
     if args.image_alias:
-        testenv["TEST_HOSTALIASES"] = args.image_alias
-    testenv.update(dict(os.environ))
-    for playbook_pattern in args.playbook:
-        playbooks = glob.glob(playbook_pattern)
-        if not playbooks:
-            playbooks = glob.glob("tests/" + playbook_pattern)
-        for playbook in playbooks:
-            playbook_dir = os.path.dirname(playbook)
-            if not playbook_dir:
-                playbook_dir = os.getcwd()
-            if args.artifacts:
-                testenv["TEST_ARTIFACTS"] = args.artifacts
-            else:
-                testenv["TEST_ARTIFACTS"] = os.path.join(
-                    playbook_dir, "artifacts"
-                )
-            if "ANSIBLE_LOG_PATH" not in os.environ:
-                testenv["ANSIBLE_LOG_PATH"] = os.path.join(
-                    testenv["TEST_ARTIFACTS"], "ansible.log"
-                )
-                os.makedirs(testenv["TEST_ARTIFACTS"], exist_ok=True)
+        test_env["TEST_HOSTALIASES"] = args.image_alias
+    if args.collection:
+        test_env["ANSIBLE_COLLECTIONS_PATHS"] = args.collection_base_path
+        role = os.path.basename(os.environ["TOXINIDIR"])
+    test_env.update(dict(os.environ))
 
-            subprocess.check_call(  # nosec
-                [
-                    "ansible-playbook",
-                    "-vv",
-                    f"--inventory={args.inventory}",
-                    setup_yml,
-                    playbook,
-                ],
-                env=testenv,
-                cwd=playbook_dir,
-            )
+    if args.artifacts:
+        test_env["TEST_ARTIFACTS"] = args.artifacts
+    else:
+        test_env["TEST_ARTIFACTS"] = "artifacts"
+    if "ANSIBLE_LOG_PATH" not in os.environ:
+        test_env["ANSIBLE_LOG_PATH"] = os.path.join(
+            test_env["TEST_ARTIFACTS"], "ansible.log"
+        )
+    os.makedirs(test_env["TEST_ARTIFACTS"], exist_ok=True)
+
+    ansible_args = []
+    playbooks = []
+    if "--" in args.ansible_args:
+        ary = ansible_args
+    else:
+        ary = playbooks
+    for item in args.ansible_args:
+        if item == "--":
+            ary = playbooks
+        else:
+            ary.append(item)
+
+    # the cwd for the playbook process is the directory
+    # of the first playbook - so that we can find the
+    # provision.fmf, if any - this means we have to use
+    # abs paths for the playbooks
+    playbooks = [os.path.abspath(pth) for pth in playbooks]
+    cwd = os.path.dirname(playbooks[0])
+    subprocess.check_call(  # nosec
+        [
+            "ansible-playbook",
+            "-vv",
+            f"--inventory={args.inventory}",
+        ] + ansible_args + [setup_yml] + playbooks,
+        env=test_env,
+        cwd=cwd,
+    )
+
+
+def help_epilog():
+    """Additional help for arguments."""
+    return """Any remaining arguments are passed directly to
+    ansible-playbook - these may be ansible-playbook arguments,
+    or one or more playbooks.  If you specify both arguments and
+    playbooks, you must separate them by using -- on the command
+    line e.g. --become root -- tests_default.yml.  If you do not
+    use the --, then the script assumes all arguments are
+    playbooks."""
 
 
 def main():
     """Execute the main function."""
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(epilog=help_epilog())
     parser.add_argument(
         "--config",
         default=os.environ.get(
@@ -331,17 +393,14 @@ def main():
         help="Pass TEST_DEBUG=true to qemu for debugging the VM.",
     )
     parser.add_argument(
-        "playbook",
-        nargs="+",
-        default=shlex.split(os.environ.get("LSR_QEMU_PLAYBOOKS", "")),
-        help=(
-            "Test playbook or playbooks to run.  You can specify a glob "
-            "wildcard e.g. tests/tests_feature*.yml.  If you do not specify "
-            "the directory, the playbooks will be looked for in the 'tests/' "
-            "directory."
-        ),
+        "--collection",
+        action="store_true",
+        default=bool(strtobool(os.environ.get("LSR_QEMU_COLLECTION", "False"))),
+        help="Run against a collection instead of a role.",
     )
-    args = parser.parse_args()
+    # any remaining args are assumed to be ansible-playbook args or playbooks
+    args, ansible_args = parser.parse_known_args()
+    args.ansible_args = ansible_args
 
     # either image-name or image-file must be given
     if not any([args.image_name, args.image_file]) or all(
@@ -353,49 +412,17 @@ def main():
         sys.exit(1)
     os.makedirs(args.cache, exist_ok=True)
 
-    images = {}
-
-    with open(args.config) as configfile:
-        config = json.load(configfile)
-        images = config["images"]
-
-    if args.image_name:
-        image = get_image(images, args.image_name)
-        if not image:
-            logging.critical(
-                "Given image %s not found in config %s.",
-                args.image_name,
-                args.config,
-            )
-            sys.exit(1)
-        image_url = get_url(image)
-        if not image_url:
-            logging.critical(
-                "Could not determine download URL for %s from %s.",
-                args.image_name,
-                str(image),
-            )
-            sys.exit(1)
-        image_path = fetch_image(image_url, args.cache, image["name"])
-        if not image_path:
-            logging.critical(
-                "Could not download image %s from URL %s.",
-                args.image_name,
-                image_url,
-            )
-            sys.exit(1)
-        image["file"] = image_path
-    else:
-        image = {
-            "name": os.path.basename(args.image_file),
-            "file": args.image_file,
-        }
-
-    try:
-        setup_yml = make_setup_yml(image)
-        run_test_playbooks(args, image, setup_yml)
-    finally:
-        os.unlink(setup_yml)
+    image = get_image_config(args)
+    setup_yml = make_setup_yml(image, args)
+    if args.collection:
+        args.collection_base_path = os.environ["TOX_WORK_DIR"]
+        args.collection_path = os.path.join(
+            args.collection_base_path,
+            "ansible_collections",
+            os.environ["LSR_ROLE2COLL_NAMESPACE"],
+            os.environ["LSR_ROLE2COLL_NAME"],
+        )
+    run_ansible_playbooks(args, image, setup_yml)
 
 
 if __name__ == "__main__":
