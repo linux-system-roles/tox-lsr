@@ -282,6 +282,7 @@ def run_ansible_playbooks(args, image, setup_yml):
         test_env["TEST_ARTIFACTS"] = args.artifacts
     else:
         test_env["TEST_ARTIFACTS"] = "artifacts"
+    test_env["TEST_ARTIFACTS"] = os.path.abspath(test_env["TEST_ARTIFACTS"])
     if "ANSIBLE_LOG_PATH" not in os.environ:
         test_env["ANSIBLE_LOG_PATH"] = os.path.join(
             test_env["TEST_ARTIFACTS"], "ansible.log"
