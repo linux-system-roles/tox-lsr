@@ -31,6 +31,13 @@ This shows that the `--lsr-enable` flag is available.
 
 ### Molecule and Ansible Version Support
 
+As of August 30, 2021, system roles do not support the latest versions of
+molecule 3.x or later, which only support Ansible 3.x or later.  While it's
+possible that system roles will work with Ansible 3.x and later, there is some
+work that needs to be done to ensure that they are supportable and supported.
+Therefore, for now, molecule testing is disabled by default, and we will revisit
+this issue in the near future.
+
 tox-lsr 2.0 and later use molecule v3, which support Ansible 2.8 and later.  If
 for some reason you need to support Ansible 2.7 or earlier, use tox-lsr 1.x.
 

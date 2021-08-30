@@ -45,6 +45,16 @@ if ! lsr_venv_python_matches_system_python; then
   exit "${error_code:-0}"
 fi
 
+if [ "${LSR_MSCENARIOS:-}" = SKIP ]; then
+  lsr_info "Skipping molecule tests"
+  exit "${error_code:-0}"
+fi
+
+if ! lsr_molecule_supports_ansible "${LSR_ANSIBLES:-}"; then
+  lsr_info "WARNING: Molecule does not support Ansible versions ${LSR_ANSIBLES:-} - please use ansible==3.* or later, or use LSR_MSCENARIOS=SKIP"
+  exit "${error_code:-0}"
+fi
+
 for ansible_dependency in ${LSR_ANSIBLES:-}; do
   for molecule_scenario in ${LSR_MSCENARIOS:-}; do
     lsr_banner \

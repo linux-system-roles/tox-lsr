@@ -214,6 +214,25 @@ function lsr_setup_module_utils() {
   fi
 }
 
+##
+# lsr_molecule_supports_ansible [$1]
+# This assumes you are using the latest molecule
+# return 0 if molecule supports all of the given versions of
+# ansible
+function lsr_molecule_supports_ansible() {
+  local ansible_versions
+  ansible_versions="$1"
+  for av in $ansible_versions; do
+    case "$av" in
+    ansible) continue ;;
+    ansible==3.*) continue ;;
+    ansible==4.*) continue ;;
+    *) return 1
+    esac
+  done
+  return 0
+}
+
 # set TOPDIR
 # shellcheck disable=SC2034
 ME=${ME:-"$(basename "$0")"}
