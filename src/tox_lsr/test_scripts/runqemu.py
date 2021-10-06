@@ -265,11 +265,9 @@ def get_image_config(args):
     return image
 
 
-def run_ansible_playbooks(args, image, setup_yml):
+def run_ansible_playbooks(args, image, setup_yml, test_env):
     """Run the given playbooks."""
-    test_env = {
-        "TEST_SUBJECTS": image["file"],
-    }
+    test_env["TEST_SUBJECTS"] = image["file"]
     if args.debug:
         test_env["TEST_DEBUG"] = "true"
     if args.image_alias:
@@ -319,6 +317,24 @@ def run_ansible_playbooks(args, image, setup_yml):
         env=test_env,
         cwd=cwd,
     )
+
+
+def install_requirements(args, test_env):
+    """Install reqs from meta/requirements.yml, if any."""
+    if os.path.isfile("meta/requirements.yml"):
+        subprocess.check_call(  # nosec
+            [
+                "ansible-galaxy",
+                "collection",
+                "install",
+                "-p",
+                args.collection_base_path,
+                "-vv",
+                "-r",
+                "meta/requirements.yml",
+            ],
+        )
+        test_env["ANSIBLE_COLLECTIONS_PATHS"] = args.collection_base_path
 
 
 def help_epilog():
@@ -416,15 +432,10 @@ def main():
 
     image = get_image_config(args)
     setup_yml = make_setup_yml(image, args)
-    if args.collection:
-        args.collection_base_path = os.environ["TOX_WORK_DIR"]
-        args.collection_path = os.path.join(
-            args.collection_base_path,
-            "ansible_collections",
-            os.environ["LSR_ROLE2COLL_NAMESPACE"],
-            os.environ["LSR_ROLE2COLL_NAME"],
-        )
-    run_ansible_playbooks(args, image, setup_yml)
+    args.collection_base_path = os.environ["TOX_WORK_DIR"]
+    test_env = {}
+    install_requirements(args, test_env)
+    run_ansible_playbooks(args, image, setup_yml, test_env)
 
 
 if __name__ == "__main__":
