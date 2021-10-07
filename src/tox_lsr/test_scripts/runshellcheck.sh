@@ -40,4 +40,4 @@ set -x
 # https://github.com/koalaman/shellcheck/wiki/SC2086
 # shellcheck disable=SC2086
 find \( -name .tox -prune \) -o \( -name .venv -prune \) -o -name \*.sh -exec \
-  shellcheck ${RUN_SHELLCHECK_EXTRA_ARGS:-} -e SC1090 '{}' \;
+  shellcheck ${RUN_SHELLCHECK_EXTRA_ARGS:-} -P "$SCRIPTDIR" -e SC1090 '{}' \;

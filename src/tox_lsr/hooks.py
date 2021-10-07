@@ -238,6 +238,7 @@ def tox_addoption(parser):
     # type: (Parser) -> None
     """Add lsr-enable option."""
 
+    # pylint: disable=consider-using-f-string
     parser.add_argument(
         "--lsr-enable",
         dest=LSR_ENABLE,
@@ -262,6 +263,7 @@ def tox_configure(config):
 
     lsr_scriptdir = os.environ.get(LSR_SCRIPTDIR_ENV)
     if not lsr_scriptdir:
+        # pylint: disable=consider-using-f-string
         lsr_script_filename = pkg_resources.resource_filename(
             __name__,
             "{tsdir}/{tsname}".format(
@@ -272,6 +274,7 @@ def tox_configure(config):
         lsr_scriptdir = os.path.dirname(lsr_script_filename)
     lsr_configdir = os.environ.get(LSR_CONFIGDIR_ENV)
     if not lsr_configdir:
+        # pylint: disable=consider-using-f-string
         lsr_config_filename = pkg_resources.resource_filename(
             __name__,
             "{cfdir}/{cfname}".format(
@@ -280,6 +283,7 @@ def tox_configure(config):
             ),
         )
         lsr_configdir = os.path.dirname(lsr_config_filename)
+    # pylint: disable=consider-using-f-string
     lsr_default = pkg_resources.resource_string(
         __name__,
         "{cfdir}/{deftox}".format(
