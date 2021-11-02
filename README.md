@@ -322,13 +322,13 @@ environment variables:
 * `LSR_ANSIBLE_TEST_DOCKER` - if set to `true`, `ansible-test` will be run with
   `--docker`
 * `LSR_ANSIBLE_LINT_DEP` - this is the dep to pass when doing the pip install of
-  ansible for ansible-lint.  The default is `ansible-core==2.11.*`.
+  ansible for ansible-lint.  The default is `ansible-core==2.12.*`.
 * `LSR_ANSIBLE_LINT_VER` - this is the version of ansible-lint to install for
   the ansible-lint testenv.  The default is `5.2.0`.
 * `LSR_ANSIBLE_TEST_DEP` - this is the dep to pass when doing the pip install of
-  ansible for ansible-test.  The default is `ansible-core==2.11.*`.
+  ansible for ansible-test.  The default is `ansible-core==2.12.*`.
 * `LSR_PYLINT_ANSIBLE_DEP` - this is the dep to pass when doing the pip install of
-  ansible for pylint.  The default is `ansible-core==2.11.*`.
+  ansible for pylint.  The default is `ansible-core==2.12.*`.
 
 These environment variables have been removed:
 * `RUN_PYLINT_INCLUDE` - use `RUN_PYLINT_EXTRA_ARGS`
@@ -379,10 +379,11 @@ and an Ansible inventory. There are two test envs that can be used to run these
 tests:
 * `qemu` - tests against the latest version of ansible supported by the roles
 * `qemu-ansible-core-2.11` - tests against ansible-core 2.11
+* `qemu-ansible-core-2.12` - tests against ansible-core 2.12
 
 These tests run in one of two modes, depending on which of the following
 arguments you provide.  Note that you must use `--` on the command line after
-the `-e qemu` or `-e qemu-ansible-core-2.11` so that `tox` will not attempt to
+the `-e qemu` or `-e qemu-ansible-core-2.x` so that `tox` will not attempt to
 interpret these as `tox` arguments:
 ```
 tox -e qemu -- --image-name fedora-34 ...
