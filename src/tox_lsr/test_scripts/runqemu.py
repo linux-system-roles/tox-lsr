@@ -21,6 +21,13 @@ import yaml
 # https://www.freedesktop.org/wiki/CommonExtendedAttributes/
 URL_XATTR = "user.xdg.origin.url"
 DATE_XATTR = "user.dublincore.date"
+DEFAULT_QEMU_INVENTORY = (
+    "/usr/share/ansible/inventory/standard-inventory-qcow2"
+)
+DEFAULT_QEMU_INVENTORY_URL = (
+    "https://pagure.io/standard-test-roles/raw/master/f/inventory/"
+    "standard-inventory-qcow2"
+)
 
 
 def get_metadata_from_file(path, attr_key):
@@ -52,6 +59,25 @@ def get_metadata_from_url(url, metadata_key):
     """Get metadata from given url."""
     with urllib.request.urlopen(url) as url_response:  # nosec
         return url_response.getheader(metadata_key)
+
+
+def get_inventory_script(args):
+    """Get inventory script if URL, or set local path."""
+    if args.inventory.startswith("http"):
+        inventory_tempfile = os.path.join(
+            os.environ["TOX_WORK_DIR"], "standard-inventory-qcow2"
+        )
+        try:
+            with urllib.request.urlopen(  # nosec
+                args.inventory  # nosec
+            ) as url_response:  # nosec
+                with open(inventory_tempfile, "wb") as inf:
+                    shutil.copyfileobj(url_response, inf)
+            os.chmod(inventory_tempfile, 0o777)  # nosec
+            args.inventory = inventory_tempfile
+        except Exception:  # pylint: disable=broad-except
+            logging.warning(traceback.format_exc())
+            args.inventory = DEFAULT_QEMU_INVENTORY
 
 
 def fetch_image(url, cache, label):
@@ -373,9 +399,12 @@ def main():
         "--inventory",
         default=os.environ.get(
             "LSR_QEMU_INVENTORY",
-            "/usr/share/ansible/inventory/standard-inventory-qcow2",
+            DEFAULT_QEMU_INVENTORY_URL,
         ),
-        help="Inventory to use for VMs",
+        help=(
+            "Inventory to use for VMs - if file, use directly - "
+            "if URL, download to tempdir"
+        ),
     )
     parser.add_argument(
         "--image-name",
@@ -433,8 +462,9 @@ def main():
     image = get_image_config(args)
     setup_yml = make_setup_yml(image, args)
     args.collection_base_path = os.environ["TOX_WORK_DIR"]
-    test_env = {}
+    test_env = image.get("env", {})
     install_requirements(args, test_env)
+    get_inventory_script(args)
     run_ansible_playbooks(args, image, setup_yml, test_env)
 
 
