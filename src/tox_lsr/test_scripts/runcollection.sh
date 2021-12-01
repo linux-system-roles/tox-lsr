@@ -25,7 +25,7 @@ curl -s -L -o "$LSR_TOX_ENV_DIR/tmp/runtime.yml" "${automaintenancerepo}${STABLE
 rm -rf "$TOX_WORK_DIR/ansible_collections"
 python "$LSR_TOX_ENV_DIR/tmp/lsr_role2collection.py" --src-path "$TOPDIR/.." --dest-path "$TOX_WORK_DIR" \
   --role "$role" --namespace "${LSR_ROLE2COLL_NAMESPACE}" --collection "${LSR_ROLE2COLL_NAME}" \
-  --meta-runtime "$LSR_TOX_ENV_DIR/tmp/runtime.yml" \
+  --meta-runtime "$LSR_TOX_ENV_DIR/tmp/runtime.yml" --subrole-prefix "private_${role}_subrole_" \
   2>&1 | tee "$TOX_ENV_DIR/collection.out"
 
 # create the collection in this dir to share with other testenvs
