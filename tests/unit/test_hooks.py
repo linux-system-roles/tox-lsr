@@ -25,7 +25,14 @@ import pkg_resources
 # on the same line, so I have to disable it before the line
 # pylint: disable=no-member,no-name-in-module,import-error
 import py.iniconfig
-import unittest2
+
+# pylint: disable=ungrouped-imports,duplicate-code
+try:
+    from unittest2 import TestCase
+except ImportError:
+    from unittest import TestCase
+except AttributeError:
+    from unittest import TestCase
 
 from tox_lsr.hooks import (
     CONFIG_FILES_SUBDIR,
@@ -52,7 +59,7 @@ from .utils import MockConfig
 # pylint: disable=protected-access
 
 
-class HooksTestCase(unittest2.TestCase):
+class HooksTestCase(TestCase):
     def setUp(self):
         self.toxworkdir = tempfile.mkdtemp()
         patch(

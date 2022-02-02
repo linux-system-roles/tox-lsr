@@ -329,6 +329,8 @@ environment variables:
   ansible for ansible-test.  The default is `ansible-core==2.12.*`.
 * `LSR_PYLINT_ANSIBLE_DEP` - this is the dep to pass when doing the pip install of
   ansible for pylint.  The default is `ansible-core==2.12.*`.
+* `LSR_RUN_TEST_DIR` - this is the directory to use to override `changedir`, for
+  those tests that need it, primarily the tests run "recursively" via `-e collection`
 
 These environment variables have been removed:
 * `RUN_PYLINT_INCLUDE` - use `RUN_PYLINT_EXTRA_ARGS`
