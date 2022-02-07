@@ -20,4 +20,4 @@ line_length = 79
 max-line-length = 79
 
 [tool.pylint."message control"]
-disable = "R0205"
+disable = "R0205,R0801"

@@ -3,11 +3,17 @@
 #
 """Test for version presence."""
 
-import unittest2
+# pylint: disable=duplicate-code
+try:
+    from unittest2 import TestCase
+except ImportError:
+    from unittest import TestCase
+except AttributeError:
+    from unittest import TestCase
 
 from tox_lsr import __version__
 
 
-class VersionTestCase(unittest2.TestCase):
+class VersionTestCase(TestCase):
     def test_version(self):
         self.assertIsInstance(__version__, str)
