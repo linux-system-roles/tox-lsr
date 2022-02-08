@@ -360,6 +360,8 @@ lsr_some_shell_func ....
   etc.
 * `LSR_TOX_ENV_DIR` - the full path to the directory for the test environment
   e.g. `/path/to/ROLENAME/.tox/env-3.8`
+* `LSR_TOX_ENV_TMP_DIR` - the full path to the temporary directory for the test
+  environment - equivalent to tox `{envtmpdir}`
 
 ### Working on collections docs
 
@@ -421,11 +423,19 @@ You must provide one of `--image-file` or `--image-name`.
   clone.  The corresponding environment variable is `LSR_QEMU_INVENTORY`.
 * `--collection` - This tells the script that the given playbook should be run
   in the context of a collection.  You must have already created the collection
-  first e.g. by using `tox -e collection`.  The corresponding environment
-  variable is `LSR_QEMU_COLLECTION`.
+  by first using `tox -e collection`.  The corresponding environment
+  variable is `LSR_QEMU_COLLECTION`.  The test playbook should be the converted
+  test - so use something like
+  `.tox/ansible_collections/fedora/linux_system_roles/tests/ROLE/tests_my_test.yml`
+  Otherwise, you won't be testing the collection.
 * `--debug` - This uses the `TEST_DEBUG=true` for `standard-inventory-qcow2` so
   that you can debug the VM.  The corresponding environment variable is
   `LSR_QEMU_DEBUG`.
+* `--pretty` - pretty print the output e.g. use `ANSIBLE_STDOUT_CALLBACK=debug`
+  - the default value is `true`.  The corresponding environment variable is
+  `LSR_QEMU_PRETTY`.
+* `--profile` - show the profile_tasks information.  The default value is `true`.
+  The corresponding environment variable is `LSR_QEMU_PROFILE`.
 
 Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
@@ -481,12 +491,12 @@ run `ansible-playbook` with `standard-inventory-qcow2` as the inventory script
 with `tests/tests_default.yml`.
 
 The environment variables are useful for customizing in your local tox.ini.  For
-example, if I want to use a custom location for my config and cache, and I want
-to always use the `ANSIBLE_STDOUT_CALLBACK=debug`, I can do this:
+example, if I want to use a custom location for my config and cache, and I do not
+want to use the profile_tasks plugin, I can do this:
 ```
 [qemu_common]
 setenv =
     LSR_QEMU_CONFIG = /home/username/myconfig.json
     LSR_QEMU_CACHE = /my/big/partition
-    ANSIBLE_STDOUT_CALLBACK = debug
+    LSR_QEMU_PROFILE = false
 ```
