@@ -25,8 +25,8 @@ DEFAULT_QEMU_INVENTORY = (
     "/usr/share/ansible/inventory/standard-inventory-qcow2"
 )
 DEFAULT_QEMU_INVENTORY_URL = (
-    "https://pagure.io/standard-test-roles/raw/master/f/inventory/"
-    "standard-inventory-qcow2"
+    "https://pagure.io/fork/rmeggins/standard-test-roles/raw/"
+    "linux-system-roles/f/inventory/standard-inventory-qcow2"
 )
 
 
@@ -363,6 +363,64 @@ def install_requirements(args, test_env):
         test_env["ANSIBLE_COLLECTIONS_PATHS"] = args.collection_base_path
 
 
+def setup_callback_plugins(args, test_env):
+    """Install and configure debug and profile_tasks."""
+    if args.pretty or args.profile:
+        callback_plugin_dir = os.path.join(
+            os.environ["TOX_WORK_DIR"], "callback_plugins"
+        )
+        os.makedirs(callback_plugin_dir, exist_ok=True)
+        debug_py = os.path.join(callback_plugin_dir, "debug.py")
+        profile_py = os.path.join(callback_plugin_dir, "profile_tasks.py")
+        if (args.pretty and not os.path.isfile(debug_py)) or (
+            args.profile and not os.path.isfile(profile_py)
+        ):
+            subprocess.check_call(  # nosec
+                [
+                    "ansible-galaxy",
+                    "collection",
+                    "install",
+                    "-p",
+                    os.environ["LSR_TOX_ENV_TMP_DIR"],
+                    "-vv",
+                    "ansible.posix",
+                ],
+            )
+            tmp_debug_py = os.path.join(
+                os.environ["LSR_TOX_ENV_TMP_DIR"],
+                "ansible_collections",
+                "ansible",
+                "posix",
+                "plugins",
+                "callback",
+                "debug.py",
+            )
+            tmp_profile_py = os.path.join(
+                os.environ["LSR_TOX_ENV_TMP_DIR"],
+                "ansible_collections",
+                "ansible",
+                "posix",
+                "plugins",
+                "callback",
+                "profile_tasks.py",
+            )
+            if args.pretty:
+                if not os.path.isfile(debug_py):
+                    os.rename(tmp_debug_py, debug_py)
+                test_env["ANSIBLE_STDOUT_CALLBACK"] = "debug"
+            if args.profile:
+                if not os.path.isfile(profile_py):
+                    os.rename(tmp_profile_py, profile_py)
+                test_env["ANSIBLE_CALLBACKS_ENABLED"] = "profile_tasks"
+                test_env["ANSIBLE_CALLBACK_WHITELIST"] = "profile_tasks"
+            shutil.rmtree(
+                os.path.join(
+                    os.environ["LSR_TOX_ENV_TMP_DIR"], "ansible_collections"
+                )
+            )
+            test_env["ANSIBLE_CALLBACK_PLUGINS"] = callback_plugin_dir
+
+
 def help_epilog():
     """Additional help for arguments."""
     return """Any remaining arguments are passed directly to
@@ -445,6 +503,18 @@ def main():
         ),
         help="Run against a collection instead of a role.",
     )
+    parser.add_argument(
+        "--pretty",
+        action="store_true",
+        default=bool(strtobool(os.environ.get("LSR_QEMU_PRETTY", "True"))),
+        help="Pretty print output (like stdout callback debug).",
+    )
+    parser.add_argument(
+        "--profile",
+        action="store_true",
+        default=bool(strtobool(os.environ.get("LSR_QEMU_PROFILE", "True"))),
+        help="Show task profile (like profile_tasks).",
+    )
     # any remaining args are assumed to be ansible-playbook args or playbooks
     args, ansible_args = parser.parse_known_args()
     args.ansible_args = ansible_args
@@ -465,6 +535,7 @@ def main():
     test_env = image.get("env", {})
     install_requirements(args, test_env)
     get_inventory_script(args)
+    setup_callback_plugins(args, test_env)
     run_ansible_playbooks(args, image, setup_yml, test_env)
 
 
