@@ -407,18 +407,20 @@ def setup_callback_plugins(args, test_env):
             if args.pretty:
                 if not os.path.isfile(debug_py):
                     os.rename(tmp_debug_py, debug_py)
-                test_env["ANSIBLE_STDOUT_CALLBACK"] = "debug"
             if args.profile:
                 if not os.path.isfile(profile_py):
                     os.rename(tmp_profile_py, profile_py)
-                test_env["ANSIBLE_CALLBACKS_ENABLED"] = "profile_tasks"
-                test_env["ANSIBLE_CALLBACK_WHITELIST"] = "profile_tasks"
             shutil.rmtree(
                 os.path.join(
                     os.environ["LSR_TOX_ENV_TMP_DIR"], "ansible_collections"
                 )
             )
-            test_env["ANSIBLE_CALLBACK_PLUGINS"] = callback_plugin_dir
+        if args.pretty:
+            test_env["ANSIBLE_STDOUT_CALLBACK"] = "debug"
+        if args.profile:
+            test_env["ANSIBLE_CALLBACKS_ENABLED"] = "profile_tasks"
+            test_env["ANSIBLE_CALLBACK_WHITELIST"] = "profile_tasks"
+        test_env["ANSIBLE_CALLBACK_PLUGINS"] = callback_plugin_dir
 
 
 def help_epilog():
