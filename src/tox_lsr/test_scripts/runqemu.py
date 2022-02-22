@@ -5,7 +5,9 @@ import argparse
 import errno
 import json
 import logging
+import lxml.html
 import os
+import re
 import shutil
 import subprocess  # nosec
 import sys
@@ -180,13 +182,50 @@ def composeurl2images(
     return [(composepath + qcow2[0].path) for qcow2 in candidates]
 
 
+def centoshtml2image(url, desiredarch):
+    """Find the latest image url for the CentOS Stream HTML image list."""
+    # we will need to join it with a relative path component
+    if url.endswith("/"):
+        path = url
+    else:
+        path = url + "/"
+    if path.find("/centos/9-stream/") > -1:
+        centosver = 9
+    elif path.find("/centos/8-stream/") > -1:
+        centosver = 8
+    else:
+        logging.error("Could not determine CentOS version from %s", url)
+        return ""
+
+    page = urllib.request.urlopen(url)
+    tree = lxml.html.fromstring(page.read())
+    imagelist = tree.xpath("//table[@id='indexlist']//@href")
+    namematch = re.compile(
+        f"CentOS-Stream-GenericCloud-{centosver}-"
+        r"\([1-9][0-9]+[.][0-9]+\)"
+        f"[.]{desiredarch}[.]qcow2"
+    )
+
+    def getdatekey(imagename):
+        match = namematch.match(imagename)
+        if match and len(match.groups()) > 0:
+            return match.group(1)
+        return ""
+
+    candidate = sorted(
+        [img for img in imagelist if img.endswith(".qcow2")], key=getdatekey
+    )[-1]
+    return path + candidate
+
+
 def get_url(image):
     """Get the url to use to download the given image."""
     source = image.get("source")
+    compose_url = image.get("compose")
+    centoshtml_url = image.get("centoshtml")
     if source:
         return source
-    compose_url = image.get("compose")
-    if compose_url:
+    elif compose_url:
         variant = image.get("variant")
         image_urls = composeurl2images(compose_url, "x86_64", variant)
         if len(image_urls) == 1:
@@ -200,9 +239,13 @@ def get_url(image):
                 )
             else:
                 logging.error("no image found in compose %s", compose_url)
+    elif centoshtml_url:
+        return centoshtml2image(centoshtml_url, "x86_64")
     else:
         logging.error(
-            "neither source nor compose specified" "in image %s", image["name"]
+            "neither source nor compose nor centoshtml specified"
+            "in image %s",
+            image["name"],
         )
 
 
