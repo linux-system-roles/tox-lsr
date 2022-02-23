@@ -25,6 +25,9 @@ jobs:
         run: |
           set -euxo pipefail
           toxpyver=$(echo "${{ matrix.pyver }}" | tr -d .)
+          case "$toxpyver" in
+          *-alpha*|*-beta*) toxpyver=$(echo "$toxpyver" | sed 's/^.* \([1-9][0-9]*\)$/\1/') ;;
+          esac
           toxpyenv="py${toxpyver}-tox30"
           # run python unit tests only on the toxenv that matches the
           # current system version of python
