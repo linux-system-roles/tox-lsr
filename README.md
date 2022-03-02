@@ -436,6 +436,33 @@ You must provide one of `--image-file` or `--image-name`.
   `LSR_QEMU_PRETTY`.
 * `--profile` - show the profile_tasks information.  The default value is `true`.
   The corresponding environment variable is `LSR_QEMU_PROFILE`.
+* `--profile-task-limit` - if using `--profile`, this specifies how many tasks
+  to show in the output.  The default is `30`.  The corresponding environment
+  variable is `LSR_QEMU_PROFILE_TASK_LIMIT`.
+* `--use-yum-cache` - Create 1 GB files in your `cache` directory for the purpose
+  of storing package cache and metadata information for the VM.  The files will
+  be named `$PLATFORM_yum_cache` and `$PLATFORM_yum_varlib`.  These are mounted
+  into the VM at `/var/cache/dnf` and `/var/lib/dnf` (or `yum` for YUM platforms).
+  If you plan to run multiple tests on the same platform, this can speed up
+  subsequent runs by installing packages from the cache rather than the network.
+  The default is `false`.  The corresponding environment variable is
+  `LSR_QEMU_USE_YUM_CACHE`.
+* `--use-snapshot` - Create a snapshot of the image using the original image as
+  the backing file.  This is useful when you want to pre-load a image for testing
+  multiple test runs, but do not want to alter the original downloaded image e.g.
+  pre-configuring package repos, pre-installing packages, etc.  This will create
+  a file called `$IMAGE_PATH.snap` e.g. `~/.cache/linux-system-roles/fedora-34.qcow2.snap`.
+  The default is `false`.  The corresponding environment variable is
+  `LSR_QEMU_USE_SNAPSHOT`.
+* `--wait-on-qemu` - This tells the script to wait for qemu to fully exit after
+  each call to `ansible-playbook`.  This can solve race conditions if you are using
+  `runqemu` to run multiple tests sequentially.  The default value is `false`.  Do
+  not use this if you are using `runqemu` interactively, especially with `--debug`.
+  This is intended only for use by automated test applications.  The corresponding
+  environment variable is `LSR_QEMU_WAIT_ON_QEMU`.
+* `--setup-yml` - You can specify your own setup.yml script to use in addition to the
+  setup steps in the `config` file.  The corresponding environment variable is
+  `LSR_QEMU_SETUP_YML`.
 
 Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
