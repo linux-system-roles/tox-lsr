@@ -459,10 +459,18 @@ You must provide one of `--image-file` or `--image-name`.
   `runqemu` to run multiple tests sequentially.  The default value is `false`.  Do
   not use this if you are using `runqemu` interactively, especially with `--debug`.
   This is intended only for use by automated test applications.  The corresponding
-  environment variable is `LSR_QEMU_WAIT_ON_QEMU`.
-* `--setup-yml` - You can specify your own setup.yml script to use in addition to the
-  setup steps in the `config` file.  The corresponding environment variable is
-  `LSR_QEMU_SETUP_YML`.
+  environment variable is `LSR_QEMU_WAIT_ON_QEMU`.  NOTE: Don't use this unless
+  you know what you are doing.
+* `--setup-yml` - You can specify one or more of your own setup.yml playbooks to
+  use in addition to the setup steps in the `config` file.  The corresponding
+  environment variable is `LSR_QEMU_SETUP_YML`, which is a comma-delimited list
+  of playbook files.
+* `--write-inventory` - Specify a file to write the generated inventory to.  The
+  filename must be simply `inventory`, or must end in `.yml`.  Examples:
+  `/path/to/inventory` or `/tmp/inventory.xxx.yml`.  The user is responsible for
+  removing when no longer in use.  This is useful if you use `--debug` or
+  `LOCK_ON_FILE` which leave the VM running, and you want to run Ansible against
+  the VM again.
 
 Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments

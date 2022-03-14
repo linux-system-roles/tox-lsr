@@ -2,7 +2,6 @@
 """Launch qemu tests."""
 
 import argparse
-import atexit
 import errno
 import json
 import logging
@@ -16,7 +15,6 @@ import time
 import traceback
 import urllib.parse
 import urllib.request
-from distutils.util import strtobool
 
 import yaml
 
@@ -47,6 +45,35 @@ DEFAULT_QEMU_INVENTORY_URL = (
 )
 INVENTORY_FAIL_MSG = "ERROR: Inventory is empty, tests did not run"
 DEFAULT_PROFILE_TASK_LIMIT = 30  # report up to 30 tasks in profile
+
+
+def strtobool(val):
+    """
+    Convert a string representation of truth to true (1) or false (0).
+
+    True values are 'y', 'yes', 't', 'true', 'on', and '1'; false values
+    are 'n', 'no', 'f', 'false', 'off', and '0'.  Raises ValueError if
+    'val' is anything else.
+    """
+    val = val.lower()
+    if val in ("y", "yes", "t", "true", "on", "1"):
+        return 1
+    elif val in ("n", "no", "f", "false", "off", "0"):
+        return 0
+    else:
+        raise ValueError("invalid truth value %r" % (val,))
+
+
+def is_ansible_env_var_supported(env_var_name):
+    """See if ansible supports the given config env var."""
+    result = subprocess.check_output(  # nosec
+        ["ansible-config", "list"], stderr=subprocess.STDOUT, encoding="utf-8"
+    )
+    # look for name: ENV_VAR_NAME in output
+    match = re.search(r"name: {}\n".format(env_var_name), result)
+    if match:
+        return True
+    return False
 
 
 def get_metadata_from_file(path, attr_key):
@@ -277,154 +304,157 @@ def get_image(images, image_name):
 
 
 def make_setup_yml(
-    image, cache, remove_cloud_init, setup_yml, use_snapshot, use_yum_cache
+    image, cache, remove_cloud_init, use_snapshot, use_yum_cache
 ):
     """Make a setup.yml to setup the VM.  Keep in cache."""
-    if setup_yml is None:
-        setup_yml = os.path.join(cache, image["name"] + "_setup.yml")
-        open_mode = "w"
-    else:
-        open_mode = "a"
-        tmp_setup_yml = tempfile.NamedTemporaryFile().name
-        shutil.copy(setup_yml, tmp_setup_yml)
-        setup_yml = tmp_setup_yml
-        atexit.register(os.unlink, tmp_setup_yml)
-    fail_localhost = {
-        "name": "Fail when only localhost is available",
-        "hosts": "localhost",
+    pre_setup_yml = os.path.join(cache, image["name"] + "_setup.yml")
+    post_setup_yml = os.path.join(cache, image["name"] + "_post_setup.yml")
+    setup_play = {
+        "name": "Set up host for test playbooks",
+        "hosts": "all",
         "gather_facts": False,
-        "tasks": [
-            {"debug": {"var": "groups"}},
-            {
-                "fail": {"msg": INVENTORY_FAIL_MSG},
-                "when": ['groups["all"] == []'],
-            },
-        ],
+        "tasks": [],
     }
-    setup_plays = [fail_localhost]
-    setup_tasks = []
+    setup_plays = []
+    post_setup_plays = []
     if "setup" in image:
         if isinstance(image["setup"], str):
-            setup_tasks.append({"raw": image["setup"]})
+            setup_play["tasks"].append({"raw": image["setup"]})
         else:
             setup_plays.extend(image["setup"])
     if remove_cloud_init:
-        tasks = [
-            {
-                "name": "get cloud-init requires",
-                "command": "rpm -q --requires cloud-init",
-                "register": "__cloud_init_reqs",
-                "no_log": True,
-            },
-            {
-                "name": "remove cloud-init",
-                "package": {"name": "cloud-init", "state": "absent"},
-                "no_log": True,
-            },
-            {
-                "name": "get deps for each cloud-init req",
-                "command": "rpm -q --whatrequires {{ item | quote }}",
-                "loop": "{{ __cloud_init_reqs.stdout_lines | unique }}",
-                "ignore_errors": True,
-                "register": "__cloud_init_deps",
-                "no_log": True,
-            },
-            {
-                "name": "remove packages that were required only by cloud-init",  # noqa: E501
-                "package": {"name": "{{ item.0 }}", "state": "absent"},
-                "loop": "{{ __cloud_init_reqs.stdout_lines | unique | zip(__cloud_init_deps.results) | list }}",  # noqa: E501
-                "when": "item.1.stdout is match('no package requires ')",
-                "ignore_errors": True,
-                "no_log": True,
-            },
-        ]
-        setup_tasks.extend(tasks)
+        setup_play["tasks"].extend(
+            [
+                {
+                    "name": "get cloud-init requires",
+                    "command": "rpm -q --requires cloud-init",
+                    "register": "__cloud_init_reqs",
+                    "no_log": True,
+                },
+                {
+                    "name": "remove cloud-init",
+                    "package": {"name": "cloud-init", "state": "absent"},
+                    "no_log": True,
+                },
+                {
+                    "name": "get deps for each cloud-init req",
+                    "command": "rpm -q --whatrequires {{ item | quote }}",
+                    "loop": "{{ __cloud_init_reqs.stdout_lines | unique }}",
+                    "ignore_errors": True,
+                    "register": "__cloud_init_deps",
+                    "no_log": True,
+                },
+                {
+                    "name": "remove packages that were required only by cloud-init",  # noqa: E501
+                    "package": {"name": "{{ item.0 }}", "state": "absent"},
+                    "loop": "{{ __cloud_init_reqs.stdout_lines | unique | zip(__cloud_init_deps.results) | list }}",  # noqa: E501
+                    "when": "item.1.stdout is match('no package requires ')",
+                    "ignore_errors": True,
+                    "no_log": True,
+                },
+            ]
+        )
     if use_snapshot or use_yum_cache:
-        setup_plays[-1]["gather_facts"] = True
-        setup_tasks.append(
-            {
-                "name": "Create EPEL {{ ansible_distribution_major_version }}",
-                "command": (
-                    "yum install -y https://dl.fedoraproject.org/pub/epel/"
-                    "epel-release-latest-"
-                    "{{ ansible_distribution_major_version }}.noarch.rpm"
-                ),
-                "no_log": True,
-                "args": {
-                    "warn": False,
-                    "creates": "/etc/yum.repos.d/epel.repo",
+        setup_play["gather_facts"] = True
+        epelname = "Create EPEL {{ ansible_distribution_major_version }} repo"
+        setup_play["tasks"].extend(
+            [
+                {
+                    "name": epelname,
+                    "command": (
+                        "yum install -y https://dl.fedoraproject.org/pub/epel/"
+                        "epel-release-latest-"
+                        "{{ ansible_distribution_major_version }}.noarch.rpm"
+                    ),
+                    "no_log": True,
+                    "args": {
+                        "warn": False,
+                        "creates": "/etc/yum.repos.d/epel.repo",
+                    },
+                    "when": [
+                        "ansible_distribution in ['RedHat', 'CentOS']",
+                        "ansible_distribution_major_version in ['7', '8']",
+                    ],
                 },
-                "when": [
-                    "ansible_distribution in ['RedHat', 'CentOS']",
-                    "ansible_distribution_major_version in ['7', '8']",
-                ],
-            }
-        )
-        setup_tasks.append(
-            {
-                "name": "Create yum cache",
-                "command": "yum makecache",
-                "when": "ansible_pkg_mgr == 'yum'",
-                "args": {
-                    "warn": False,
+                {
+                    "name": "Create yum cache",
+                    "command": "yum makecache",
+                    "when": "ansible_pkg_mgr == 'yum'",
+                    "args": {
+                        "warn": False,
+                    },
+                    "no_log": True,
                 },
-                "no_log": True,
-            }
-        )
-        setup_tasks.append(
-            {
-                "name": "Create dnf cache",
-                "command": "dnf makecache",
-                "when": "ansible_pkg_mgr == 'dnf'",
-                "args": {
-                    "warn": False,
+                {
+                    "name": "Create dnf cache",
+                    "command": "dnf makecache",
+                    "when": "ansible_pkg_mgr == 'dnf'",
+                    "args": {
+                        "warn": False,
+                    },
+                    "no_log": True,
                 },
-                "no_log": True,
-            }
-        )
-        setup_tasks.append(
-            {
-                "name": "Disable EPEL 7",
-                "command": "yum-config-manager --disable epel",
-                "no_log": True,
-                "args": {
-                    "warn": False,
+                {
+                    "name": "Disable EPEL 7",
+                    "command": "yum-config-manager --disable epel",
+                    "no_log": True,
+                    "args": {
+                        "warn": False,
+                    },
+                    "when": [
+                        "ansible_distribution in ['RedHat', 'CentOS']",
+                        "ansible_distribution_major_version == '7'",
+                    ],
                 },
-                "when": [
-                    "ansible_distribution in ['RedHat', 'CentOS']",
-                    "ansible_distribution_major_version == '7'",
-                ],
-            }
-        )
-        setup_tasks.append(
-            {
-                "name": "Disable EPEL 8",
-                "command": "dnf config-manager --set-disabled epel",
-                "no_log": True,
-                "args": {
-                    "warn": False,
+                {
+                    "name": "Disable EPEL 8",
+                    "command": "dnf config-manager --set-disabled epel",
+                    "no_log": True,
+                    "args": {
+                        "warn": False,
+                    },
+                    "when": [
+                        "ansible_distribution in ['RedHat', 'CentOS']",
+                        "ansible_distribution_major_version == '8'",
+                    ],
                 },
-                "when": [
-                    "ansible_distribution in ['RedHat', 'CentOS']",
-                    "ansible_distribution_major_version == '8'",
-                ],
-            }
+            ]
         )
         if use_snapshot:
             # This MUST be the last task run to ensure all changes are flushed
             # completely to the persistent store
-            setup_tasks.append(
+            post_setup_plays.append(
                 {
-                    "name": "force sync of filesystems - ensure setup changes are made to snapshot",  # noqa: E501
-                    "command": "sync",
-                    "no_log": True,
-                }
+                    "name": "Post setup - these happen last",
+                    "hosts": "all",
+                    "gather_facts": False,
+                    "tasks": [
+                        {
+                            "name": "force sync of filesystems - ensure setup changes are made to snapshot",  # noqa: E501
+                            "command": "sync",
+                            "no_log": True,
+                        }
+                    ],
+                },
             )
 
-    setup_plays[-1]["tasks"].extend(setup_tasks)
-    with open(setup_yml, open_mode) as syf:
-        yaml.safe_dump(setup_plays, syf)
-    return setup_yml
+    if setup_plays:
+        if setup_play["tasks"]:
+            setup_plays.append(setup_play)
+        with open(pre_setup_yml, "w") as syf:
+            yaml.safe_dump(setup_plays, syf)
+    else:
+        if os.path.exists(pre_setup_yml):
+            os.unlink(pre_setup_yml)
+        pre_setup_yml = None
+    if post_setup_plays:
+        with open(post_setup_yml, "w") as syf:
+            yaml.safe_dump(post_setup_plays, syf)
+    else:
+        if os.path.exists(post_setup_yml):
+            os.unlink(post_setup_yml)
+        post_setup_yml = None
+    return pre_setup_yml, post_setup_yml
 
 
 def get_image_config(args):
@@ -472,7 +502,12 @@ def download_image(image, cache):
 
 
 def internal_run_ansible_playbooks(
-    test_env, inventory, ansible_args, playbooks, cwd, wait_on_qemu=False
+    test_env,
+    inventory,
+    ansible_args,
+    playbooks,
+    cwd,
+    wait_on_qemu=False,
 ):
     """Run ansible-playbook with the LOCK_ON_FILE if wait_on_qemu is True."""
     if wait_on_qemu:
@@ -549,10 +584,17 @@ def refresh_snapshot(
             test_env_setup,
             inventory,
             ansible_args,
-            [setup_yml],
+            setup_yml,
             cwd,
             wait_on_qemu=True,
         )
+        # there is still some sort of race condition here even with the
+        # wait_on_qemu - can get a kernel panic in the guest if started too
+        # soon after this - not sure what's going on, perhaps the OS is
+        # still flushing the changes to the qcow2.snap file in the background
+        # after the qemu process has exited - so the last resort of the
+        # desperate is the sleep with the magic number :-(
+        time.sleep(30)
 
 
 def run_ansible_playbooks(
@@ -568,6 +610,7 @@ def run_ansible_playbooks(
     inventory,
     use_ansible_log,
     wait_on_qemu,
+    write_inventory,
 ):
     """Run the given playbooks."""
     test_env["TEST_SUBJECTS"] = image["file"]
@@ -607,6 +650,7 @@ def run_ansible_playbooks(
     # provision.fmf, if any - this means we have to use
     # abs paths for the playbooks
     playbooks = [os.path.abspath(pth) for pth in playbooks]
+    setup_yml = [os.path.abspath(setup) for setup in setup_yml]
     cwd = os.path.dirname(playbooks[0])
     if use_snapshot:
         snapfile = image["file"] + ".snap"
@@ -621,7 +665,9 @@ def run_ansible_playbooks(
             cwd,
         )
     else:
-        playbooks.insert(0, setup_yml)
+        playbooks = setup_yml + playbooks
+    if write_inventory:
+        test_env["TEST_INVENTORY"] = write_inventory
     internal_run_ansible_playbooks(
         test_env, inventory, local_ansible_args, playbooks, cwd, wait_on_qemu
     )
@@ -712,8 +758,10 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
     if pretty:
         test_env["ANSIBLE_STDOUT_CALLBACK"] = "debug"
     if profile:
-        test_env["ANSIBLE_CALLBACKS_ENABLED"] = "profile_tasks"
-        test_env["ANSIBLE_CALLBACK_WHITELIST"] = "profile_tasks"
+        if is_ansible_env_var_supported("ANSIBLE_CALLBACKS_ENABLED"):
+            test_env["ANSIBLE_CALLBACKS_ENABLED"] = "profile_tasks"
+        else:
+            test_env["ANSIBLE_CALLBACK_WHITELIST"] = "profile_tasks"
         if profile_task_limit > -1:
             val = str(profile_task_limit)
             test_env["PROFILE_TASKS_TASK_OUTPUT_LIMIT"] = val
@@ -737,17 +785,34 @@ def runqemu(
     ansible_args=[],
     use_snapshot=False,
     use_ansible_log=False,
-    setup_yml=None,
+    setup_yml=[],
     wait_on_qemu=False,
+    write_inventory=None,
 ):
     """Download the image, set up, run playbooks."""
+    if write_inventory:
+        basename = os.path.basename(write_inventory)
+        if basename != "inventory" and os.path.splitext(basename)[1] != ".yml":
+            fmtstr = (
+                "Write inventory file {} must be named 'inventory' or must "
+                "end in '.yml'"
+            )
+            errmsg = fmtstr.format(write_inventory)
+            logging.critical(errmsg)
+            raise Exception(errmsg)
     download_image(image, cache)
-    setup_yml = make_setup_yml(
-        image, cache, remove_cloud_init, setup_yml, use_snapshot, use_yum_cache
+    pre_setup_yml, post_setup_yml = make_setup_yml(
+        image, cache, remove_cloud_init, use_snapshot, use_yum_cache
     )
+    if pre_setup_yml:
+        setup_yml.insert(0, pre_setup_yml)
+    if post_setup_yml:
+        setup_yml.append(post_setup_yml)
     if collection_path is None and "TOX_WORK_DIR" in os.environ:
         collection_path = os.environ["TOX_WORK_DIR"]
     test_env = image.get("env", {})
+    # failures in inventory will force ansible-playbook to fail
+    test_env["ANSIBLE_INVENTORY_ANY_UNPARSED_IS_FAILED"] = "true"
     if use_yum_cache:
         yum_cache_path = os.path.join(cache, image["name"] + "_yum_cache")
         test_env["TEST_YUM_CACHE_PATHS"] = yum_cache_path
@@ -769,6 +834,7 @@ def runqemu(
         inventory,
         use_ansible_log,
         wait_on_qemu,
+        write_inventory,
     )
 
 
@@ -906,8 +972,9 @@ def main():
     )
     parser.add_argument(
         "--setup-yml",
-        default=os.environ.get("LSR_QEMU_SETUP_YML"),
-        help="setup.yml to use rather than get from config.",
+        action="append",
+        default=[],
+        help="one or more setup.yml to use in addition to config.",
     )
     parser.add_argument(
         "--wait-on-qemu",
@@ -917,9 +984,20 @@ def main():
         ),
         help="Wait for qemu to exit - not for interactive use.",
     )
+    parser.add_argument(
+        "--write-inventory",
+        default=os.environ.get("LSR_QEMU_WRITE_INVENTORY"),
+        help=(
+            "write YAML inventory to this file rather than tmp file.  "
+            "The file must be named 'inventory' or must end in '.yml'.  "
+            "The user is responsible for removing when no longer in use."
+        ),
+    )
     # any remaining args are assumed to be ansible-playbook args or playbooks
     args, ansible_args = parser.parse_known_args()
     args.ansible_args = ansible_args
+    if not args.setup_yml and "LSR_QEMU_SETUP_YML" in os.environ:
+        args.setup_yml = os.environ["LSR_QEMU_SETUP_YML"].split(",")
 
     # either image-name or image-file must be given
     if not any([args.image_name, args.image_file]) or all(
@@ -949,6 +1027,7 @@ def main():
         use_ansible_log=True,
         setup_yml=args.setup_yml,
         wait_on_qemu=args.wait_on_qemu,
+        write_inventory=args.write_inventory,
     )
 
 
