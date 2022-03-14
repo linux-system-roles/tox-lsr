@@ -792,10 +792,7 @@ def runqemu(
     """Download the image, set up, run playbooks."""
     if write_inventory:
         basename = os.path.basename(write_inventory)
-        if (
-            basename != "inventory"
-            and os.path.splitext(basename)[1] != ".yml"
-        ):
+        if basename != "inventory" and os.path.splitext(basename)[1] != ".yml":
             fmtstr = (
                 "Write inventory file {} must be named 'inventory' or must "
                 "end in '.yml'"
