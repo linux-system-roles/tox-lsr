@@ -2,6 +2,7 @@
 """Launch qemu tests."""
 
 import argparse
+import atexit
 import errno
 import json
 import logging
@@ -11,14 +12,28 @@ import shutil
 import subprocess  # nosec
 import sys
 import tempfile
+import time
 import traceback
 import urllib.parse
 import urllib.request
 from distutils.util import strtobool
 
-import productmd.compose
 import yaml
-from bs4 import BeautifulSoup
+
+try:
+    import productmd.compose
+
+    HAS_PRODUCTMD = True
+except ImportError:
+    print("No productmd")
+    HAS_PRODUCTMD = False
+try:
+    from bs4 import BeautifulSoup
+
+    HAS_BS4 = True
+except ImportError:
+    # print("No soup for you!")
+    HAS_BS4 = False
 
 # https://www.freedesktop.org/wiki/CommonExtendedAttributes/
 URL_XATTR = "user.xdg.origin.url"
@@ -30,6 +45,8 @@ DEFAULT_QEMU_INVENTORY_URL = (
     "https://pagure.io/fork/rmeggins/standard-test-roles/raw/"
     "linux-system-roles/f/inventory/standard-inventory-qcow2"
 )
+INVENTORY_FAIL_MSG = "ERROR: Inventory is empty, tests did not run"
+DEFAULT_PROFILE_TASK_LIMIT = 30  # report up to 30 tasks in profile
 
 
 def get_metadata_from_file(path, attr_key):
@@ -63,23 +80,24 @@ def get_metadata_from_url(url, metadata_key):
         return url_response.getheader(metadata_key)
 
 
-def get_inventory_script(args):
+def get_inventory_script(inventory):
     """Get inventory script if URL, or set local path."""
-    if args.inventory.startswith("http"):
+    if inventory.startswith("http"):
         inventory_tempfile = os.path.join(
             os.environ["TOX_WORK_DIR"], "standard-inventory-qcow2"
         )
         try:
             with urllib.request.urlopen(  # nosec
-                args.inventory  # nosec
+                inventory  # nosec
             ) as url_response:  # nosec
                 with open(inventory_tempfile, "wb") as inf:
                     shutil.copyfileobj(url_response, inf)
             os.chmod(inventory_tempfile, 0o777)  # nosec
-            args.inventory = inventory_tempfile
+            inventory = inventory_tempfile
         except Exception:  # pylint: disable=broad-except
             logging.warning(traceback.format_exc())
-            args.inventory = DEFAULT_QEMU_INVENTORY
+            inventory = DEFAULT_QEMU_INVENTORY
+    return inventory
 
 
 def fetch_image(url, cache, label):
@@ -204,11 +222,10 @@ def centoshtml2image(url, desiredarch):
         for td in tree.find_all("td", class_="indexcolname")
         if td.a["href"].endswith(".qcow2")
     ]
-    namematch = re.compile(
-        f"CentOS-Stream-GenericCloud-{centosver}-"
-        r"\([1-9][0-9]+[.][0-9]+\)"
-        f"[.]{desiredarch}[.]qcow2"
+    pat = (
+        r"CentOS-Stream-GenericCloud-%s-\([1-9][0-9]+[.][0-9]+\)[.]%s[.]qcow2"
     )
+    namematch = re.compile(pat.format(centosver, desiredarch))
 
     def getdatekey(imagename):
         match = namematch.match(imagename)
@@ -259,10 +276,19 @@ def get_image(images, image_name):
     return None
 
 
-def make_setup_yml(image, args):
+def make_setup_yml(
+    image, cache, remove_cloud_init, setup_yml, use_snapshot, use_yum_cache
+):
     """Make a setup.yml to setup the VM.  Keep in cache."""
-    setup_yml = os.path.join(args.cache, image["name"] + "_setup.yml")
-    inventory_fail_msg = "ERROR: Inventory is empty, tests did not run"
+    if setup_yml is None:
+        setup_yml = os.path.join(cache, image["name"] + "_setup.yml")
+        open_mode = "w"
+    else:
+        open_mode = "a"
+        tmp_setup_yml = tempfile.NamedTemporaryFile().name
+        shutil.copy(setup_yml, tmp_setup_yml)
+        setup_yml = tmp_setup_yml
+        atexit.register(os.unlink, tmp_setup_yml)
     fail_localhost = {
         "name": "Fail when only localhost is available",
         "hosts": "localhost",
@@ -270,26 +296,133 @@ def make_setup_yml(image, args):
         "tasks": [
             {"debug": {"var": "groups"}},
             {
-                "fail": {"msg": inventory_fail_msg},
+                "fail": {"msg": INVENTORY_FAIL_MSG},
                 "when": ['groups["all"] == []'],
             },
         ],
     }
     setup_plays = [fail_localhost]
+    setup_tasks = []
     if "setup" in image:
         if isinstance(image["setup"], str):
-            play = {
-                "name": "Setup",
-                "hosts": "all",
-                "become": True,
-                "gather_facts": False,
-                "tasks": [{"raw": image["setup"]}],
-            }
-            setup_plays.append(play)
+            setup_tasks.append({"raw": image["setup"]})
         else:
             setup_plays.extend(image["setup"])
+    if remove_cloud_init:
+        tasks = [
+            {
+                "name": "get cloud-init requires",
+                "command": "rpm -q --requires cloud-init",
+                "register": "__cloud_init_reqs",
+                "no_log": True,
+            },
+            {
+                "name": "remove cloud-init",
+                "package": {"name": "cloud-init", "state": "absent"},
+                "no_log": True,
+            },
+            {
+                "name": "get deps for each cloud-init req",
+                "command": "rpm -q --whatrequires {{ item | quote }}",
+                "loop": "{{ __cloud_init_reqs.stdout_lines | unique }}",
+                "ignore_errors": True,
+                "register": "__cloud_init_deps",
+                "no_log": True,
+            },
+            {
+                "name": "remove packages that were required only by cloud-init",  # noqa: E501
+                "package": {"name": "{{ item.0 }}", "state": "absent"},
+                "loop": "{{ __cloud_init_reqs.stdout_lines | unique | zip(__cloud_init_deps.results) | list }}",  # noqa: E501
+                "when": "item.1.stdout is match('no package requires ')",
+                "ignore_errors": True,
+                "no_log": True,
+            },
+        ]
+        setup_tasks.extend(tasks)
+    if use_snapshot or use_yum_cache:
+        setup_plays[-1]["gather_facts"] = True
+        setup_tasks.append(
+            {
+                "name": "Create EPEL {{ ansible_distribution_major_version }}",
+                "command": (
+                    "yum install -y https://dl.fedoraproject.org/pub/epel/"
+                    "epel-release-latest-"
+                    "{{ ansible_distribution_major_version }}.noarch.rpm"
+                ),
+                "no_log": True,
+                "args": {
+                    "warn": False,
+                    "creates": "/etc/yum.repos.d/epel.repo",
+                },
+                "when": [
+                    "ansible_distribution in ['RedHat', 'CentOS']",
+                    "ansible_distribution_major_version in ['7', '8']",
+                ],
+            }
+        )
+        setup_tasks.append(
+            {
+                "name": "Create yum cache",
+                "command": "yum makecache",
+                "when": "ansible_pkg_mgr == 'yum'",
+                "args": {
+                    "warn": False,
+                },
+                "no_log": True,
+            }
+        )
+        setup_tasks.append(
+            {
+                "name": "Create dnf cache",
+                "command": "dnf makecache",
+                "when": "ansible_pkg_mgr == 'dnf'",
+                "args": {
+                    "warn": False,
+                },
+                "no_log": True,
+            }
+        )
+        setup_tasks.append(
+            {
+                "name": "Disable EPEL 7",
+                "command": "yum-config-manager --disable epel",
+                "no_log": True,
+                "args": {
+                    "warn": False,
+                },
+                "when": [
+                    "ansible_distribution in ['RedHat', 'CentOS']",
+                    "ansible_distribution_major_version == '7'",
+                ],
+            }
+        )
+        setup_tasks.append(
+            {
+                "name": "Disable EPEL 8",
+                "command": "dnf config-manager --set-disabled epel",
+                "no_log": True,
+                "args": {
+                    "warn": False,
+                },
+                "when": [
+                    "ansible_distribution in ['RedHat', 'CentOS']",
+                    "ansible_distribution_major_version == '8'",
+                ],
+            }
+        )
+        if use_snapshot:
+            # This MUST be the last task run to ensure all changes are flushed
+            # completely to the persistent store
+            setup_tasks.append(
+                {
+                    "name": "force sync of filesystems - ensure setup changes are made to snapshot",  # noqa: E501
+                    "command": "sync",
+                    "no_log": True,
+                }
+            )
 
-    with open(setup_yml, "w") as syf:
+    setup_plays[-1]["tasks"].extend(setup_tasks)
+    with open(setup_yml, open_mode) as syf:
         yaml.safe_dump(setup_plays, syf)
     return setup_yml
 
@@ -298,9 +431,10 @@ def get_image_config(args):
     """Get the image to use."""
     images = {}
 
-    with open(args.config) as configfile:
-        config = json.load(configfile)
-        images = config["images"]
+    if args.config != "NONE":
+        with open(args.config) as configfile:
+            config = json.load(configfile)
+            images = config["images"]
 
     if args.image_name:
         image = get_image(images, args.image_name)
@@ -311,23 +445,6 @@ def get_image_config(args):
                 args.config,
             )
             sys.exit(1)
-        image_url = get_url(image)
-        if not image_url:
-            logging.critical(
-                "Could not determine download URL for %s from %s.",
-                args.image_name,
-                str(image),
-            )
-            sys.exit(1)
-        image_path = fetch_image(image_url, args.cache, image["name"])
-        if not image_path:
-            logging.critical(
-                "Could not download image %s from URL %s.",
-                args.image_name,
-                image_url,
-            )
-            sys.exit(1)
-        image["file"] = image_path
     else:
         image = {
             "name": os.path.basename(args.image_file),
@@ -336,35 +453,150 @@ def get_image_config(args):
     return image
 
 
-def run_ansible_playbooks(args, image, setup_yml, test_env):
+def download_image(image, cache):
+    """Download the image to the cache."""
+    if "file" not in image:
+        image_url = get_url(image)
+        if not image_url:
+            formatstr = "Could not determine download URL for %s from %s."
+            errstr = formatstr.format(image["name"], image)
+            logging.critical(errstr)
+            raise Exception(errstr)
+        image_path = fetch_image(image_url, cache, image["name"])
+        if not image_path:
+            formatstr = "Could not download image %s from URL %s."
+            errstr = formatstr.format(image["name"], image_url)
+            logging.critical(errstr)
+            raise Exception(errstr)
+        image["file"] = image_path
+
+
+def internal_run_ansible_playbooks(
+    test_env, inventory, ansible_args, playbooks, cwd, wait_on_qemu=False
+):
+    """Run ansible-playbook with the LOCK_ON_FILE if wait_on_qemu is True."""
+    if wait_on_qemu:
+        test_lock_on_file = tempfile.NamedTemporaryFile().name
+        test_env["LOCK_ON_FILE"] = test_lock_on_file
+    try:
+        subprocess.check_call(  # nosec
+            [
+                "ansible-playbook",
+                "-vv",
+                "--inventory=" + inventory,
+            ]
+            + ansible_args
+            + playbooks,
+            env=test_env,
+            cwd=cwd,
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+    except subprocess.CalledProcessError as cpe:
+        if wait_on_qemu and os.path.exists(test_lock_on_file):
+            os.unlink(test_lock_on_file)
+        raise cpe
+    if wait_on_qemu and os.path.exists(test_lock_on_file):
+        with open(test_lock_on_file) as lff:
+            waitpid = int(lff.read())
+        os.unlink(test_lock_on_file)
+        while True:
+            try:
+                os.kill(waitpid, 0)
+                time.sleep(1)
+            except ProcessLookupError:
+                break
+
+
+def refresh_snapshot(
+    image_file, snapfile, inventory, test_env, ansible_args, setup_yml, cwd
+):
+    """Create the snapshot if it is missing or too old."""
+    need_refresh = False
+    if not os.path.isfile(snapfile):
+        need_refresh = True
+    else:
+        snap_stats = os.stat(snapfile)
+        file_stats = os.stat(image_file)
+        now = time.time()
+        # snapshot is older than 1 day or backing file is newer
+        if now - snap_stats.st_ctime > 86400:
+            need_refresh = True
+        elif snap_stats.st_ctime < file_stats.st_ctime:
+            need_refresh = True
+    if need_refresh:
+        subprocess.check_call(  # nosec
+            [
+                "qemu-img",
+                "create",
+                "-f",
+                "qcow2",
+                "-b",
+                image_file,
+                "-F",
+                "qcow2",
+                snapfile,
+            ],
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+        )
+        test_env_setup = {}
+        test_env_setup.update(test_env)
+        test_env_setup["TEST_WRITE_TO_IMAGE"] = "True"
+        if "TEST_DEBUG" in test_env_setup:
+            del test_env_setup["TEST_DEBUG"]
+        internal_run_ansible_playbooks(
+            test_env_setup,
+            inventory,
+            ansible_args,
+            [setup_yml],
+            cwd,
+            wait_on_qemu=True,
+        )
+
+
+def run_ansible_playbooks(
+    image,
+    setup_yml,
+    test_env,
+    debug,
+    image_alias,
+    collection_path,
+    artifacts,
+    ansible_args,
+    use_snapshot,
+    inventory,
+    use_ansible_log,
+    wait_on_qemu,
+):
     """Run the given playbooks."""
     test_env["TEST_SUBJECTS"] = image["file"]
-    if args.debug:
+    if debug:
         test_env["TEST_DEBUG"] = "true"
-    if args.image_alias:
-        test_env["TEST_HOSTALIASES"] = args.image_alias
-    if args.collection:
-        test_env["ANSIBLE_COLLECTIONS_PATHS"] = args.collection_base_path
+    if image_alias:
+        test_env["TEST_HOSTALIASES"] = image_alias
+    if collection_path:
+        test_env["ANSIBLE_COLLECTIONS_PATHS"] = collection_path
     test_env.update(dict(os.environ))
 
-    if args.artifacts:
-        test_env["TEST_ARTIFACTS"] = args.artifacts
-    else:
+    if artifacts:
+        test_env["TEST_ARTIFACTS"] = artifacts
+    elif "TEST_ARTIFACTS" not in test_env:
         test_env["TEST_ARTIFACTS"] = "artifacts"
     test_env["TEST_ARTIFACTS"] = os.path.abspath(test_env["TEST_ARTIFACTS"])
-    if "ANSIBLE_LOG_PATH" not in os.environ:
+    if use_ansible_log and "ANSIBLE_LOG_PATH" not in os.environ:
         test_env["ANSIBLE_LOG_PATH"] = os.path.join(
             test_env["TEST_ARTIFACTS"], "ansible.log"
         )
     os.makedirs(test_env["TEST_ARTIFACTS"], exist_ok=True)
 
-    ansible_args = []
+    local_ansible_args = []
     playbooks = []
-    if "--" in args.ansible_args:
-        ary = ansible_args
+    if "--" in ansible_args:
+        ary = local_ansible_args
     else:
         ary = playbooks
-    for item in args.ansible_args:
+    for item in ansible_args:
         if item == "--":
             ary = playbooks
         else:
@@ -376,96 +608,168 @@ def run_ansible_playbooks(args, image, setup_yml, test_env):
     # abs paths for the playbooks
     playbooks = [os.path.abspath(pth) for pth in playbooks]
     cwd = os.path.dirname(playbooks[0])
-    subprocess.check_call(  # nosec
-        [
-            "ansible-playbook",
-            "-vv",
-            f"--inventory={args.inventory}",
-        ]
-        + ansible_args
-        + [setup_yml]
-        + playbooks,
-        env=test_env,
-        cwd=cwd,
+    if use_snapshot:
+        snapfile = image["file"] + ".snap"
+        test_env["TEST_SUBJECTS"] = snapfile
+        refresh_snapshot(
+            image["file"],
+            snapfile,
+            inventory,
+            test_env,
+            local_ansible_args,
+            setup_yml,
+            cwd,
+        )
+    else:
+        playbooks.insert(0, setup_yml)
+    internal_run_ansible_playbooks(
+        test_env, inventory, local_ansible_args, playbooks, cwd, wait_on_qemu
     )
 
 
-def install_requirements(args, test_env):
+def install_requirements(sourcedir, collection_path, test_env):
     """Install reqs from meta/requirements.yml, if any."""
-    if os.path.isfile("meta/requirements.yml"):
+    reqfile = os.path.join(sourcedir, "meta", "requirements.yml")
+    if os.path.isfile(reqfile):
         subprocess.check_call(  # nosec
             [
                 "ansible-galaxy",
                 "collection",
                 "install",
                 "-p",
-                args.collection_base_path,
+                collection_path,
                 "-vv",
                 "-r",
-                "meta/requirements.yml",
+                reqfile,
             ],
+            stdout=sys.stdout,
+            stderr=sys.stderr,
         )
-        test_env["ANSIBLE_COLLECTIONS_PATHS"] = args.collection_base_path
+        test_env["ANSIBLE_COLLECTIONS_PATHS"] = collection_path
 
 
-def setup_callback_plugins(args, test_env):
+def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
     """Install and configure debug and profile_tasks."""
-    if args.pretty or args.profile:
-        callback_plugin_dir = os.path.join(
-            os.environ["TOX_WORK_DIR"], "callback_plugins"
+    if (
+        "ANSIBLE_CALLBACK_PLUGINS" in os.environ
+        or "ANSIBLE_CALLBACK_WHITELIST" in os.environ
+        or "ANSIBLE_STDOUT_CALLBACK" in os.environ
+    ):
+        return
+    if not pretty and not profile:
+        return
+    callback_plugin_dir = os.path.join(
+        os.environ["TOX_WORK_DIR"], "callback_plugins"
+    )
+    os.makedirs(callback_plugin_dir, exist_ok=True)
+    debug_py = os.path.join(callback_plugin_dir, "debug.py")
+    profile_py = os.path.join(callback_plugin_dir, "profile_tasks.py")
+    if (pretty and not os.path.isfile(debug_py)) or (
+        profile and not os.path.isfile(profile_py)
+    ):
+        subprocess.check_call(  # nosec
+            [
+                "ansible-galaxy",
+                "collection",
+                "install",
+                "-p",
+                os.environ["LSR_TOX_ENV_TMP_DIR"],
+                "-vv",
+                "ansible.posix",
+            ],
+            stdout=sys.stdout,
+            stderr=sys.stderr,
         )
-        os.makedirs(callback_plugin_dir, exist_ok=True)
-        debug_py = os.path.join(callback_plugin_dir, "debug.py")
-        profile_py = os.path.join(callback_plugin_dir, "profile_tasks.py")
-        if (args.pretty and not os.path.isfile(debug_py)) or (
-            args.profile and not os.path.isfile(profile_py)
-        ):
-            subprocess.check_call(  # nosec
-                [
-                    "ansible-galaxy",
-                    "collection",
-                    "install",
-                    "-p",
-                    os.environ["LSR_TOX_ENV_TMP_DIR"],
-                    "-vv",
-                    "ansible.posix",
-                ],
+        tmp_debug_py = os.path.join(
+            os.environ["LSR_TOX_ENV_TMP_DIR"],
+            "ansible_collections",
+            "ansible",
+            "posix",
+            "plugins",
+            "callback",
+            "debug.py",
+        )
+        tmp_profile_py = os.path.join(
+            os.environ["LSR_TOX_ENV_TMP_DIR"],
+            "ansible_collections",
+            "ansible",
+            "posix",
+            "plugins",
+            "callback",
+            "profile_tasks.py",
+        )
+        if pretty:
+            if not os.path.isfile(debug_py):
+                os.rename(tmp_debug_py, debug_py)
+        if profile:
+            if not os.path.isfile(profile_py):
+                os.rename(tmp_profile_py, profile_py)
+        shutil.rmtree(
+            os.path.join(
+                os.environ["LSR_TOX_ENV_TMP_DIR"], "ansible_collections"
             )
-            tmp_debug_py = os.path.join(
-                os.environ["LSR_TOX_ENV_TMP_DIR"],
-                "ansible_collections",
-                "ansible",
-                "posix",
-                "plugins",
-                "callback",
-                "debug.py",
-            )
-            tmp_profile_py = os.path.join(
-                os.environ["LSR_TOX_ENV_TMP_DIR"],
-                "ansible_collections",
-                "ansible",
-                "posix",
-                "plugins",
-                "callback",
-                "profile_tasks.py",
-            )
-            if args.pretty:
-                if not os.path.isfile(debug_py):
-                    os.rename(tmp_debug_py, debug_py)
-            if args.profile:
-                if not os.path.isfile(profile_py):
-                    os.rename(tmp_profile_py, profile_py)
-            shutil.rmtree(
-                os.path.join(
-                    os.environ["LSR_TOX_ENV_TMP_DIR"], "ansible_collections"
-                )
-            )
-        if args.pretty:
-            test_env["ANSIBLE_STDOUT_CALLBACK"] = "debug"
-        if args.profile:
-            test_env["ANSIBLE_CALLBACKS_ENABLED"] = "profile_tasks"
-            test_env["ANSIBLE_CALLBACK_WHITELIST"] = "profile_tasks"
-        test_env["ANSIBLE_CALLBACK_PLUGINS"] = callback_plugin_dir
+        )
+    if pretty:
+        test_env["ANSIBLE_STDOUT_CALLBACK"] = "debug"
+    if profile:
+        test_env["ANSIBLE_CALLBACKS_ENABLED"] = "profile_tasks"
+        test_env["ANSIBLE_CALLBACK_WHITELIST"] = "profile_tasks"
+        if profile_task_limit > -1:
+            val = str(profile_task_limit)
+            test_env["PROFILE_TASKS_TASK_OUTPUT_LIMIT"] = val
+    test_env["ANSIBLE_CALLBACK_PLUGINS"] = callback_plugin_dir
+
+
+def runqemu(
+    image,
+    cache,
+    inventory,
+    remove_cloud_init=False,
+    collection_path=None,
+    use_yum_cache=False,
+    sourcedir=".",
+    pretty=True,
+    profile=True,
+    profile_task_limit=DEFAULT_PROFILE_TASK_LIMIT,
+    debug=False,
+    image_alias=None,
+    artifacts=None,
+    ansible_args=[],
+    use_snapshot=False,
+    use_ansible_log=False,
+    setup_yml=None,
+    wait_on_qemu=False,
+):
+    """Download the image, set up, run playbooks."""
+    download_image(image, cache)
+    setup_yml = make_setup_yml(
+        image, cache, remove_cloud_init, setup_yml, use_snapshot, use_yum_cache
+    )
+    if collection_path is None and "TOX_WORK_DIR" in os.environ:
+        collection_path = os.environ["TOX_WORK_DIR"]
+    test_env = image.get("env", {})
+    if use_yum_cache:
+        yum_cache_path = os.path.join(cache, image["name"] + "_yum_cache")
+        test_env["TEST_YUM_CACHE_PATHS"] = yum_cache_path
+        yum_varlib_path = os.path.join(cache, image["name"] + "_yum_varlib")
+        test_env["TEST_YUM_VARLIB_PATHS"] = yum_varlib_path
+    install_requirements(sourcedir, collection_path, test_env)
+    inventory = get_inventory_script(inventory)
+    setup_callback_plugins(pretty, profile, profile_task_limit, test_env)
+    run_ansible_playbooks(
+        image,
+        setup_yml,
+        test_env,
+        debug,
+        image_alias,
+        collection_path,
+        artifacts,
+        ansible_args,
+        use_snapshot,
+        inventory,
+        use_ansible_log,
+        wait_on_qemu,
+    )
 
 
 def help_epilog():
@@ -562,6 +866,57 @@ def main():
         default=bool(strtobool(os.environ.get("LSR_QEMU_PROFILE", "True"))),
         help="Show task profile (like profile_tasks).",
     )
+    parser.add_argument(
+        "--profile-task-limit",
+        default=int(
+            os.environ.get(
+                "LSR_QEMU_PROFILE_TASK_LIMIT", str(DEFAULT_PROFILE_TASK_LIMIT)
+            )
+        ),
+        type=int,
+        help=(
+            "Number of tasks to display in profile tasks output (default: 30)."
+        ),
+    )
+    parser.add_argument(
+        "--remove-cloud-init",
+        action="store_true",
+        default=bool(
+            strtobool(os.environ.get("LSR_QEMU_REMOVE_CLOUD_INIT", "False"))
+        ),
+        help="Remove cloud-init from the image before running tests.",
+    )
+    parser.add_argument(
+        "--use-yum-cache",
+        action="store_true",
+        default=bool(
+            strtobool(os.environ.get("LSR_QEMU_USE_YUM_CACHE", "False"))
+        ),
+        help=(
+            "Create a dnf/yum RPM package cache - speed up for multiple runs."
+        ),
+    )
+    parser.add_argument(
+        "--use-snapshot",
+        action="store_true",
+        default=bool(
+            strtobool(os.environ.get("LSR_QEMU_USE_SNAPSHOT", "False"))
+        ),
+        help="Use an image snapshot for multiple runs.",
+    )
+    parser.add_argument(
+        "--setup-yml",
+        default=os.environ.get("LSR_QEMU_SETUP_YML"),
+        help="setup.yml to use rather than get from config.",
+    )
+    parser.add_argument(
+        "--wait-on-qemu",
+        action="store_true",
+        default=bool(
+            strtobool(os.environ.get("LSR_QEMU_WAIT_ON_QEMU", "False"))
+        ),
+        help="Wait for qemu to exit - not for interactive use.",
+    )
     # any remaining args are assumed to be ansible-playbook args or playbooks
     args, ansible_args = parser.parse_known_args()
     args.ansible_args = ansible_args
@@ -577,13 +932,24 @@ def main():
     os.makedirs(args.cache, exist_ok=True)
 
     image = get_image_config(args)
-    setup_yml = make_setup_yml(image, args)
-    args.collection_base_path = os.environ["TOX_WORK_DIR"]
-    test_env = image.get("env", {})
-    install_requirements(args, test_env)
-    get_inventory_script(args)
-    setup_callback_plugins(args, test_env)
-    run_ansible_playbooks(args, image, setup_yml, test_env)
+    runqemu(
+        image,
+        args.cache,
+        args.inventory,
+        remove_cloud_init=args.remove_cloud_init,
+        use_yum_cache=args.use_yum_cache,
+        pretty=args.pretty,
+        profile=args.profile,
+        profile_task_limit=args.profile_task_limit,
+        debug=args.debug,
+        image_alias=args.image_alias,
+        artifacts=args.artifacts,
+        ansible_args=args.ansible_args,
+        use_snapshot=args.use_snapshot,
+        use_ansible_log=True,
+        setup_yml=args.setup_yml,
+        wait_on_qemu=args.wait_on_qemu,
+    )
 
 
 if __name__ == "__main__":
