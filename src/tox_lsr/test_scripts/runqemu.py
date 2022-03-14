@@ -790,6 +790,19 @@ def runqemu(
     write_inventory=None,
 ):
     """Download the image, set up, run playbooks."""
+    if write_inventory:
+        basename = os.path.basename(write_inventory)
+        if (
+            basename != "inventory"
+            and os.path.splitext(basename)[1] != ".yml"
+        ):
+            fmtstr = (
+                "Write inventory file {} must be named 'inventory' or must "
+                "end in '.yml'"
+            )
+            errmsg = fmtstr.format(write_inventory)
+            logging.critical(errmsg)
+            raise Exception(errmsg)
     download_image(image, cache)
     pre_setup_yml, post_setup_yml = make_setup_yml(
         image, cache, remove_cloud_init, use_snapshot, use_yum_cache
