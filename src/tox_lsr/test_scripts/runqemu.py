@@ -782,10 +782,10 @@ def runqemu(
     debug=False,
     image_alias=None,
     artifacts=None,
-    ansible_args=[],
+    ansible_args=None,
     use_snapshot=False,
     use_ansible_log=False,
-    setup_yml=[],
+    setup_yml=None,
     wait_on_qemu=False,
     write_inventory=None,
 ):
@@ -804,6 +804,8 @@ def runqemu(
     pre_setup_yml, post_setup_yml = make_setup_yml(
         image, cache, remove_cloud_init, use_snapshot, use_yum_cache
     )
+    if setup_yml is None:
+        setup_yml = []
     if pre_setup_yml:
         setup_yml.insert(0, pre_setup_yml)
     if post_setup_yml:
@@ -821,6 +823,8 @@ def runqemu(
     install_requirements(sourcedir, collection_path, test_env)
     inventory = get_inventory_script(inventory)
     setup_callback_plugins(pretty, profile, profile_task_limit, test_env)
+    if ansible_args is None:
+        ansible_args = []
     run_ansible_playbooks(
         image,
         setup_yml,
