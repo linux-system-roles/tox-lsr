@@ -471,6 +471,9 @@ You must provide one of `--image-file` or `--image-name`.
   removing when no longer in use.  This is useful if you use `--debug` or
   `LOCK_ON_FILE` which leave the VM running, and you want to run Ansible against
   the VM again.
+* `--erase-old-snapshot` - If `true`, erase the current snapshot.  The default
+  is `false`.  Use this with `--use-snapshot` to ensure a brand new snapshot is
+  created.  The corresponding environment variable is `LSR_QEMU_ERASE_OLD_SNAPSHOT`.
 
 Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
