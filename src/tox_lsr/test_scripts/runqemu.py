@@ -550,6 +550,7 @@ def refresh_snapshot(
     need_refresh = False
     if not os.path.isfile(snapfile):
         need_refresh = True
+        logging.info("Creating snapshot because %s does not exist", snapfile)
     else:
         snap_stats = os.stat(snapfile)
         file_stats = os.stat(image_file)
@@ -557,8 +558,14 @@ def refresh_snapshot(
         # snapshot is older than 1 day or backing file is newer
         if now - snap_stats.st_ctime > 86400:
             need_refresh = True
+            logging.info("Creating snapshot because %s is too old", snapfile)
         elif snap_stats.st_ctime < file_stats.st_ctime:
             need_refresh = True
+            logging.info(
+                "Creating snapshot because %s is older than backing file %s",
+                snapfile,
+                image_file,
+            )
     if need_refresh:
         subprocess.check_call(  # nosec
             [
@@ -595,6 +602,7 @@ def refresh_snapshot(
         # after the qemu process has exited - so the last resort of the
         # desperate is the sleep with the magic number :-(
         time.sleep(30)
+        logging.info("Created snapshot %s", snapfile)
 
 
 def run_ansible_playbooks(
@@ -611,6 +619,7 @@ def run_ansible_playbooks(
     use_ansible_log,
     wait_on_qemu,
     write_inventory,
+    erase_old_snapshot,
 ):
     """Run the given playbooks."""
     test_env["TEST_SUBJECTS"] = image["file"]
@@ -652,8 +661,10 @@ def run_ansible_playbooks(
     playbooks = [os.path.abspath(pth) for pth in playbooks]
     setup_yml = [os.path.abspath(setup) for setup in setup_yml]
     cwd = os.path.dirname(playbooks[0])
+    snapfile = image["file"] + ".snap"
+    if erase_old_snapshot and os.path.exists(snapfile):
+        os.unlink(snapfile)
     if use_snapshot:
-        snapfile = image["file"] + ".snap"
         test_env["TEST_SUBJECTS"] = snapfile
         refresh_snapshot(
             image["file"],
@@ -788,6 +799,7 @@ def runqemu(
     setup_yml=None,
     wait_on_qemu=False,
     write_inventory=None,
+    erase_old_snapshot=False,
 ):
     """Download the image, set up, run playbooks."""
     if write_inventory:
@@ -839,6 +851,7 @@ def runqemu(
         use_ansible_log,
         wait_on_qemu,
         write_inventory,
+        erase_old_snapshot,
     )
 
 
@@ -997,6 +1010,17 @@ def main():
             "The user is responsible for removing when no longer in use."
         ),
     )
+    parser.add_argument(
+        "--erase-old-snapshot",
+        action="store_true",
+        default=bool(
+            strtobool(os.environ.get("LSR_QEMU_ERASE_OLD_SNAPSHOT", "False"))
+        ),
+        help=(
+            "Erase any old, existing snapshot.  Use this with --use-snapshot "
+            "to ensure snapshot is new."
+        ),
+    )
     # any remaining args are assumed to be ansible-playbook args or playbooks
     args, ansible_args = parser.parse_known_args()
     args.ansible_args = ansible_args
@@ -1032,6 +1056,7 @@ def main():
         setup_yml=args.setup_yml,
         wait_on_qemu=args.wait_on_qemu,
         write_inventory=args.write_inventory,
+        erase_old_snapshot=args.erase_old_snapshot,
     )
 
 
