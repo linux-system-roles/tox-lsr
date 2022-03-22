@@ -474,6 +474,13 @@ You must provide one of `--image-file` or `--image-name`.
 * `--erase-old-snapshot` - If `true`, erase the current snapshot.  The default
   is `false`.  Use this with `--use-snapshot` to ensure a brand new snapshot is
   created.  The corresponding environment variable is `LSR_QEMU_ERASE_OLD_SNAPSHOT`.
+* `--post-snap-sleep-time` - Amount in seconds to sleep after creating the
+  snapshot. There is some sort of race condition that is highly platform
+  dependent - if you try to use the snapshot too soon after creation, you will
+  get hangs, kernel crashes, etc. in the new guest.  The only remedy so far is
+  to figure out how long to sleep after creating the snapshot. The default value
+  is `1` second.  The corresponding environment variable is
+  `LSR_QEMU_POST_SNAP_SLEEP_TIME`.
 
 Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments

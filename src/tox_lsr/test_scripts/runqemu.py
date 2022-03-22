@@ -45,6 +45,7 @@ DEFAULT_QEMU_INVENTORY_URL = (
 )
 INVENTORY_FAIL_MSG = "ERROR: Inventory is empty, tests did not run"
 DEFAULT_PROFILE_TASK_LIMIT = 30  # report up to 30 tasks in profile
+DEFAULT_POST_SNAP_SLEEP_TIME = 1  # seconds
 
 
 def strtobool(val):
@@ -433,7 +434,14 @@ def make_setup_yml(
                             "name": "force sync of filesystems - ensure setup changes are made to snapshot",  # noqa: E501
                             "command": "sync",
                             "no_log": True,
-                        }
+                        },
+                        {
+                            "name": "shutdown guest",
+                            "command": "shutdown now",
+                            "async": 60,
+                            "poll": 0,
+                            "no_log": True,
+                        },
                     ],
                 },
             )
@@ -544,7 +552,14 @@ def internal_run_ansible_playbooks(
 
 
 def refresh_snapshot(
-    image_file, snapfile, inventory, test_env, ansible_args, setup_yml, cwd
+    image_file,
+    snapfile,
+    inventory,
+    test_env,
+    ansible_args,
+    setup_yml,
+    cwd,
+    post_snap_sleep_time,
 ):
     """Create the snapshot if it is missing or too old."""
     need_refresh = False
@@ -587,6 +602,10 @@ def refresh_snapshot(
         test_env_setup["TEST_WRITE_TO_IMAGE"] = "True"
         if "TEST_DEBUG" in test_env_setup:
             del test_env_setup["TEST_DEBUG"]
+        if "TEST_ARTIFACTS" in test_env_setup:
+            test_env_setup["TEST_ARTIFACTS"] = (
+                test_env_setup["TEST_ARTIFACTS"] + ".snap"
+            )
         internal_run_ansible_playbooks(
             test_env_setup,
             inventory,
@@ -601,8 +620,14 @@ def refresh_snapshot(
         # still flushing the changes to the qcow2.snap file in the background
         # after the qemu process has exited - so the last resort of the
         # desperate is the sleep with the magic number :-(
-        time.sleep(30)
-        logging.info("Created snapshot %s", snapfile)
+        logging.info(
+            "Created snapshot %s - sleeping %d seconds to allow disk sync",
+            snapfile,
+            post_snap_sleep_time,
+        )
+        # sync on the host as well
+        subprocess.check_call(["/bin/sync"])  # nosec
+        time.sleep(post_snap_sleep_time)
 
 
 def run_ansible_playbooks(
@@ -620,6 +645,7 @@ def run_ansible_playbooks(
     wait_on_qemu,
     write_inventory,
     erase_old_snapshot,
+    post_snap_sleep_time,
 ):
     """Run the given playbooks."""
     test_env["TEST_SUBJECTS"] = image["file"]
@@ -674,13 +700,19 @@ def run_ansible_playbooks(
             local_ansible_args,
             setup_yml,
             cwd,
+            post_snap_sleep_time,
         )
     else:
         playbooks = setup_yml + playbooks
     if write_inventory:
         test_env["TEST_INVENTORY"] = write_inventory
     internal_run_ansible_playbooks(
-        test_env, inventory, local_ansible_args, playbooks, cwd, wait_on_qemu
+        test_env,
+        inventory,
+        local_ansible_args,
+        playbooks,
+        cwd,
+        wait_on_qemu,
     )
 
 
@@ -800,6 +832,7 @@ def runqemu(
     wait_on_qemu=False,
     write_inventory=None,
     erase_old_snapshot=False,
+    post_snap_sleep_time=DEFAULT_POST_SNAP_SLEEP_TIME,
 ):
     """Download the image, set up, run playbooks."""
     if write_inventory:
@@ -824,7 +857,7 @@ def runqemu(
         setup_yml.append(post_setup_yml)
     if collection_path is None and "TOX_WORK_DIR" in os.environ:
         collection_path = os.environ["TOX_WORK_DIR"]
-    test_env = image.get("env", {})
+    test_env = dict(image.get("env", {}))
     # failures in inventory will force ansible-playbook to fail
     test_env["ANSIBLE_INVENTORY_ANY_UNPARSED_IS_FAILED"] = "true"
     if use_yum_cache:
@@ -852,6 +885,7 @@ def runqemu(
         wait_on_qemu,
         write_inventory,
         erase_old_snapshot,
+        post_snap_sleep_time,
     )
 
 
@@ -1021,6 +1055,18 @@ def main():
             "to ensure snapshot is new."
         ),
     )
+    parser.add_argument(
+        "--post-snap-sleep-time",
+        type=int,
+        default=int(os.environ.get("LSR_QEMU_POST_SNAP_SLEEP_TIME", "0")),
+        help=(
+            "There is a race condition when using snapshot.  If you attempt "
+            "to use the snapshot too soon after creation, you will get a "
+            "hang, a guest crash, or similar.  This behavior is very platform "
+            "dependent.  The only remedy so far is to figure out how much "
+            "time to sleep post snap creation."
+        ),
+    )
     # any remaining args are assumed to be ansible-playbook args or playbooks
     args, ansible_args = parser.parse_known_args()
     args.ansible_args = ansible_args
@@ -1035,6 +1081,8 @@ def main():
             "One, and only one, of --image-name or --image-file must be given."
         )
         sys.exit(1)
+    if args.post_snap_sleep_time == 0:
+        args.post_snap_sleep_time = DEFAULT_POST_SNAP_SLEEP_TIME
     os.makedirs(args.cache, exist_ok=True)
 
     image = get_image_config(args)
@@ -1057,6 +1105,7 @@ def main():
         wait_on_qemu=args.wait_on_qemu,
         write_inventory=args.write_inventory,
         erase_old_snapshot=args.erase_old_snapshot,
+        post_snap_sleep_time=args.post_snap_sleep_time,
     )
 
 
