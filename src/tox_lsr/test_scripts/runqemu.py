@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import shutil
 import subprocess  # nosec
 import sys
@@ -15,6 +16,7 @@ import time
 import traceback
 import urllib.parse
 import urllib.request
+from contextlib import contextmanager
 
 import yaml
 
@@ -32,6 +34,12 @@ try:
 except ImportError:
     # print("No soup for you!")
     HAS_BS4 = False
+
+try:
+    ProcessLookupError
+except NameError:
+    ProcessLookupError = OSError
+
 
 # https://www.freedesktop.org/wiki/CommonExtendedAttributes/
 URL_XATTR = "user.xdg.origin.url"
@@ -316,6 +324,7 @@ def make_setup_yml(
         "gather_facts": False,
         "tasks": [],
     }
+    no_log = True
     setup_plays = []
     post_setup_plays = []
     if "setup" in image:
@@ -330,12 +339,14 @@ def make_setup_yml(
                     "name": "get cloud-init requires",
                     "command": "rpm -q --requires cloud-init",
                     "register": "__cloud_init_reqs",
-                    "no_log": True,
+                    "no_log": no_log,
+                    "ignore_errors": True,
                 },
                 {
                     "name": "remove cloud-init",
                     "package": {"name": "cloud-init", "state": "absent"},
-                    "no_log": True,
+                    "no_log": no_log,
+                    "when": "__cloud_init_reqs is success",
                 },
                 {
                     "name": "get deps for each cloud-init req",
@@ -343,15 +354,19 @@ def make_setup_yml(
                     "loop": "{{ __cloud_init_reqs.stdout_lines | unique }}",
                     "ignore_errors": True,
                     "register": "__cloud_init_deps",
-                    "no_log": True,
+                    "no_log": no_log,
+                    "when": "__cloud_init_reqs is success",
                 },
                 {
                     "name": "remove packages that were required only by cloud-init",  # noqa: E501
                     "package": {"name": "{{ item.0 }}", "state": "absent"},
                     "loop": "{{ __cloud_init_reqs.stdout_lines | unique | zip(__cloud_init_deps.results) | list }}",  # noqa: E501
-                    "when": "item.1.stdout is match('no package requires ')",
+                    "when": [
+                        "__cloud_init_reqs is success",
+                        "item.1.stdout is match('no package requires ')",
+                    ],  # noqa: E501
                     "ignore_errors": True,
-                    "no_log": True,
+                    "no_log": no_log,
                 },
             ]
         )
@@ -367,7 +382,7 @@ def make_setup_yml(
                         "epel-release-latest-"
                         "{{ ansible_distribution_major_version }}.noarch.rpm"
                     ),
-                    "no_log": True,
+                    "no_log": no_log,
                     "args": {
                         "warn": False,
                         "creates": "/etc/yum.repos.d/epel.repo",
@@ -384,7 +399,7 @@ def make_setup_yml(
                     "args": {
                         "warn": False,
                     },
-                    "no_log": True,
+                    "no_log": no_log,
                 },
                 {
                     "name": "Create dnf cache",
@@ -393,12 +408,12 @@ def make_setup_yml(
                     "args": {
                         "warn": False,
                     },
-                    "no_log": True,
+                    "no_log": no_log,
                 },
                 {
                     "name": "Disable EPEL 7",
                     "command": "yum-config-manager --disable epel",
-                    "no_log": True,
+                    "no_log": no_log,
                     "args": {
                         "warn": False,
                     },
@@ -410,7 +425,7 @@ def make_setup_yml(
                 {
                     "name": "Disable EPEL 8",
                     "command": "dnf config-manager --set-disabled epel",
-                    "no_log": True,
+                    "no_log": no_log,
                     "args": {
                         "warn": False,
                     },
@@ -433,14 +448,14 @@ def make_setup_yml(
                         {
                             "name": "force sync of filesystems - ensure setup changes are made to snapshot",  # noqa: E501
                             "command": "sync",
-                            "no_log": True,
+                            "no_log": no_log,
                         },
                         {
                             "name": "shutdown guest",
                             "command": "shutdown now",
                             "async": 60,
                             "poll": 0,
-                            "no_log": True,
+                            "no_log": no_log,
                         },
                     ],
                 },
@@ -509,6 +524,51 @@ def download_image(image, cache):
         image["file"] = image_path
 
 
+def stop_qemu(test_env):
+    """Stop qemu using LOCK_ON_FILE and wait for it to exit."""
+    lock_on_file = test_env.get("LOCK_ON_FILE")
+    if lock_on_file and os.path.exists(lock_on_file):
+        del test_env["LOCK_ON_FILE"]
+        with open(lock_on_file) as lff:
+            try:
+                waitpid = int(lff.read())
+            except ValueError:
+                waitpid = -1
+        os.unlink(lock_on_file)
+        logging.info(
+            "Shutting down VM pid [%d] from lock_on_file [%s]",
+            waitpid,
+            lock_on_file,
+        )
+        if waitpid == -1:
+            return
+        while True:
+            try:
+                os.kill(waitpid, 0)
+                time.sleep(1)
+            except ProcessLookupError as ple:
+                if ple.errno == 3:
+                    break  # no such process
+                else:
+                    raise
+
+
+@contextmanager
+def file_or_stdout(file_to_open, mode="a"):
+    """Return a file handle or stdout, stderr for subprocess."""
+    if file_to_open is None:
+        stdout = sys.stdout
+        stderr = sys.stderr
+    else:
+        stdout = open(file_to_open, mode)
+        stderr = subprocess.STDOUT
+    try:
+        yield stdout, stderr
+    finally:
+        if stdout != sys.stdout:
+            stdout.close()
+
+
 def internal_run_ansible_playbooks(
     test_env,
     inventory,
@@ -516,39 +576,29 @@ def internal_run_ansible_playbooks(
     playbooks,
     cwd,
     wait_on_qemu=False,
+    log_file=None,
 ):
     """Run ansible-playbook with the LOCK_ON_FILE if wait_on_qemu is True."""
     if wait_on_qemu:
-        test_lock_on_file = tempfile.NamedTemporaryFile().name
-        test_env["LOCK_ON_FILE"] = test_lock_on_file
+        test_env["LOCK_ON_FILE"] = tempfile.NamedTemporaryFile().name
     try:
-        subprocess.check_call(  # nosec
-            [
-                "ansible-playbook",
-                "-vv",
-                "--inventory=" + inventory,
-            ]
-            + ansible_args
-            + playbooks,
-            env=test_env,
-            cwd=cwd,
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-        )
-    except subprocess.CalledProcessError as cpe:
-        if wait_on_qemu and os.path.exists(test_lock_on_file):
-            os.unlink(test_lock_on_file)
-        raise cpe
-    if wait_on_qemu and os.path.exists(test_lock_on_file):
-        with open(test_lock_on_file) as lff:
-            waitpid = int(lff.read())
-        os.unlink(test_lock_on_file)
-        while True:
-            try:
-                os.kill(waitpid, 0)
-                time.sleep(1)
-            except ProcessLookupError:
-                break
+        with file_or_stdout(log_file) as (stdout, stderr):
+            subprocess.check_call(  # nosec
+                [
+                    "ansible-playbook",
+                    "-vv",
+                    "--inventory=" + inventory,
+                ]
+                + ansible_args
+                + playbooks,
+                env=test_env,
+                cwd=cwd,
+                stdout=stdout,
+                stderr=stderr,
+            )
+    finally:
+        if wait_on_qemu:
+            stop_qemu(test_env)
 
 
 def refresh_snapshot(
@@ -560,6 +610,7 @@ def refresh_snapshot(
     setup_yml,
     cwd,
     post_snap_sleep_time,
+    log_file,
 ):
     """Create the snapshot if it is missing or too old."""
     need_refresh = False
@@ -582,21 +633,25 @@ def refresh_snapshot(
                 image_file,
             )
     if need_refresh:
-        subprocess.check_call(  # nosec
-            [
-                "qemu-img",
-                "create",
-                "-f",
-                "qcow2",
-                "-b",
-                image_file,
-                "-F",
-                "qcow2",
-                snapfile,
-            ],
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-        )
+        if "LOCK_ON_FILE" in test_env:
+            stop_qemu(test_env)
+            test_env["LOCK_ON_FILE"] = tempfile.NamedTemporaryFile().name
+        with file_or_stdout(log_file) as (stdout, stderr):
+            subprocess.check_call(  # nosec
+                [
+                    "qemu-img",
+                    "create",
+                    "-f",
+                    "qcow2",
+                    "-b",
+                    image_file,
+                    "-F",
+                    "qcow2",
+                    snapfile,
+                ],
+                stdout=stdout,
+                stderr=stderr,
+            )
         test_env_setup = {}
         test_env_setup.update(test_env)
         test_env_setup["TEST_WRITE_TO_IMAGE"] = "True"
@@ -606,6 +661,8 @@ def refresh_snapshot(
             test_env_setup["TEST_ARTIFACTS"] = (
                 test_env_setup["TEST_ARTIFACTS"] + ".snap"
             )
+        if "LOCK_ON_FILE" in test_env_setup:
+            del test_env_setup["LOCK_ON_FILE"]
         internal_run_ansible_playbooks(
             test_env_setup,
             inventory,
@@ -613,6 +670,7 @@ def refresh_snapshot(
             setup_yml,
             cwd,
             wait_on_qemu=True,
+            log_file=log_file,
         )
         # there is still some sort of race condition here even with the
         # wait_on_qemu - can get a kernel panic in the guest if started too
@@ -625,12 +683,28 @@ def refresh_snapshot(
             snapfile,
             post_snap_sleep_time,
         )
+        time.sleep(post_snap_sleep_time)
         # sync on the host as well
         subprocess.check_call(["/bin/sync"])  # nosec
-        time.sleep(post_snap_sleep_time)
 
 
-def run_ansible_playbooks(
+def split_args_and_playbooks(args_and_playbooks):
+    """Split remaining cmd line args into ansible args and playbooks."""
+    args = []
+    playbooks = []
+    if "--" in args_and_playbooks:
+        ary = args
+    else:
+        ary = playbooks
+    for item in args_and_playbooks:
+        if item == "--":
+            ary = playbooks
+        else:
+            ary.append(item)
+    return args, playbooks
+
+
+def run_ansible_playbooks(  # noqa: C901
     image,
     setup_yml,
     test_env,
@@ -646,74 +720,139 @@ def run_ansible_playbooks(
     write_inventory,
     erase_old_snapshot,
     post_snap_sleep_time,
+    batch_file,
+    batch_report,
+    log_file,
+    tests_dir,
 ):
     """Run the given playbooks."""
+    test_env.update(dict(os.environ))
+    orig_inventory = inventory
+    ansible_args, playbooks = split_args_and_playbooks(ansible_args)
+    batches = [(None, ansible_args, playbooks)]
+    batch_inventory = None
+    batch_rc = 0
+    if batch_file:
+        batch_arg_parser = get_arg_parser()
+        with open(batch_file) as bf:
+            for line in bf:
+                args, ansible_args = batch_arg_parser.parse_known_args(
+                    shlex.split(line)
+                )
+                ansible_args, playbooks = split_args_and_playbooks(
+                    ansible_args
+                )
+                if not ansible_args:
+                    ansible_args = batches[0][1]
+                batches.append((args, ansible_args, playbooks))
+        if not write_inventory:
+            batch_inventory = tempfile.NamedTemporaryFile(suffix=".yml").name
+            write_inventory = batch_inventory
+        test_env["LOCK_ON_FILE"] = tempfile.NamedTemporaryFile().name
     test_env["TEST_SUBJECTS"] = image["file"]
-    if debug:
-        test_env["TEST_DEBUG"] = "true"
+    snapfile = test_env["TEST_SUBJECTS"] + ".snap"
     if image_alias:
         test_env["TEST_HOSTALIASES"] = image_alias
     if collection_path:
         test_env["ANSIBLE_COLLECTIONS_PATHS"] = collection_path
-    test_env.update(dict(os.environ))
-
-    if artifacts:
-        test_env["TEST_ARTIFACTS"] = artifacts
-    elif "TEST_ARTIFACTS" not in test_env:
-        test_env["TEST_ARTIFACTS"] = "artifacts"
-    test_env["TEST_ARTIFACTS"] = os.path.abspath(test_env["TEST_ARTIFACTS"])
-    if use_ansible_log and "ANSIBLE_LOG_PATH" not in os.environ:
-        test_env["ANSIBLE_LOG_PATH"] = os.path.join(
-            test_env["TEST_ARTIFACTS"], "ansible.log"
-        )
-    os.makedirs(test_env["TEST_ARTIFACTS"], exist_ok=True)
-
-    local_ansible_args = []
-    playbooks = []
-    if "--" in ansible_args:
-        ary = local_ansible_args
-    else:
-        ary = playbooks
-    for item in ansible_args:
-        if item == "--":
-            ary = playbooks
-        else:
-            ary.append(item)
-
-    # the cwd for the playbook process is the directory
-    # of the first playbook - so that we can find the
-    # provision.fmf, if any - this means we have to use
-    # abs paths for the playbooks
-    playbooks = [os.path.abspath(pth) for pth in playbooks]
-    setup_yml = [os.path.abspath(setup) for setup in setup_yml]
-    cwd = os.path.dirname(playbooks[0])
-    snapfile = image["file"] + ".snap"
-    if erase_old_snapshot and os.path.exists(snapfile):
-        os.unlink(snapfile)
-    if use_snapshot:
-        test_env["TEST_SUBJECTS"] = snapfile
-        refresh_snapshot(
-            image["file"],
-            snapfile,
-            inventory,
-            test_env,
-            local_ansible_args,
-            setup_yml,
-            cwd,
-            post_snap_sleep_time,
-        )
-    else:
-        playbooks = setup_yml + playbooks
     if write_inventory:
         test_env["TEST_INVENTORY"] = write_inventory
-    internal_run_ansible_playbooks(
-        test_env,
-        inventory,
-        local_ansible_args,
-        playbooks,
-        cwd,
-        wait_on_qemu,
-    )
+    for args, ansible_args, playbooks in batches:
+        if not playbooks:
+            continue  # i.e. user specified playbooks only in batch_file
+        if args and args.debug:
+            test_env["TEST_DEBUG"] = "true"
+        elif debug and not batch_file:
+            test_env["TEST_DEBUG"] = "true"
+        elif "TEST_DEBUG" in test_env:
+            del test_env["TEST_DEBUG"]
+        if args and args.artifacts:
+            test_env["TEST_ARTIFACTS"] = args.artifacts
+        elif artifacts:
+            test_env["TEST_ARTIFACTS"] = artifacts
+        elif "TEST_ARTIFACTS" not in test_env:
+            test_env["TEST_ARTIFACTS"] = "artifacts"
+        test_env["TEST_ARTIFACTS"] = os.path.abspath(
+            test_env["TEST_ARTIFACTS"]
+        )
+        if use_ansible_log and "ANSIBLE_LOG_PATH" not in os.environ:
+            test_env["ANSIBLE_LOG_PATH"] = os.path.join(
+                test_env["TEST_ARTIFACTS"], "ansible.log"
+            )
+        os.makedirs(test_env["TEST_ARTIFACTS"], exist_ok=True)
+
+        if args and args.log_file:
+            local_log_file = os.path.abspath(args.log_file)
+        elif log_file:
+            local_log_file = os.path.abspath(log_file)
+        else:
+            local_log_file = None
+
+        # the cwd for the playbook process is the directory
+        # of the first playbook - so that we can find the
+        # provision.fmf, if any - this means we have to use
+        # abs paths for the playbooks
+        playbooks = [os.path.abspath(pth) for pth in playbooks]
+        local_setup_yml = list(setup_yml)
+        if args and args.setup_yml:
+            local_setup_yml.extend(args.setup_yml)
+        local_setup_yml = [os.path.abspath(setup) for setup in local_setup_yml]
+        if args and args.tests_dir:
+            cwd = args.tests_dir
+        elif tests_dir:
+            cwd = tests_dir
+        else:
+            cwd = os.path.dirname(playbooks[0])
+        if (
+            (args and args.erase_old_snapshot) or erase_old_snapshot
+        ) and os.path.exists(snapfile):
+            os.unlink(snapfile)
+        if (args and args.use_snapshot) or use_snapshot:
+            test_env["TEST_SUBJECTS"] = snapfile
+            refresh_snapshot(
+                image["file"],
+                snapfile,
+                orig_inventory,
+                test_env,
+                ansible_args,
+                local_setup_yml,
+                cwd,
+                post_snap_sleep_time,
+                local_log_file,
+            )
+        else:
+            playbooks = local_setup_yml + playbooks
+        if local_log_file:
+            logging.info("Running playbooks %s", str(playbooks))
+        rc = 0
+        try:
+            internal_run_ansible_playbooks(
+                test_env,
+                inventory,
+                ansible_args,
+                playbooks,
+                cwd,
+                wait_on_qemu,
+                local_log_file,
+            )
+            if local_log_file:
+                logging.info("Playbook run was successful")
+        except subprocess.CalledProcessError as cpe:
+            rc = cpe.returncode
+            if batch_rc == 0:
+                batch_rc = rc
+            if local_log_file:
+                logging.error("Playbook run failed with error %d", rc)
+        if batch_report:
+            with open(batch_report, "a") as br:
+                br.write("%d %s\n" % (rc, " ".join(playbooks)))
+        if batch_inventory:
+            inventory = batch_inventory
+    stop_qemu(test_env)
+    if batch_inventory and os.path.exists(batch_inventory):
+        os.unlink(batch_inventory)
+    if batch_rc != 0:
+        raise Exception("One or more tests failed")
 
 
 def install_requirements(sourcedir, collection_path, test_env):
@@ -833,6 +972,10 @@ def runqemu(
     write_inventory=None,
     erase_old_snapshot=False,
     post_snap_sleep_time=DEFAULT_POST_SNAP_SLEEP_TIME,
+    batch_file=None,
+    batch_report=None,
+    log_file=None,
+    tests_dir=None,
 ):
     """Download the image, set up, run playbooks."""
     if write_inventory:
@@ -886,6 +1029,10 @@ def runqemu(
         write_inventory,
         erase_old_snapshot,
         post_snap_sleep_time,
+        batch_file,
+        batch_report,
+        log_file,
+        tests_dir,
     )
 
 
@@ -900,8 +1047,8 @@ def help_epilog():
     playbooks."""
 
 
-def main():
-    """Execute the main function."""
+def get_arg_parser():
+    """Return the argparse parser for runqemu arguments."""
     parser = argparse.ArgumentParser(epilog=help_epilog())
     parser.add_argument(
         "--config",
@@ -1067,12 +1214,61 @@ def main():
             "time to sleep post snap creation."
         ),
     )
+    parser.add_argument(
+        "--batch-file",
+        default=os.environ.get("LSR_QEMU_BATCH_FILE"),
+        help=(
+            "text file - each line is a list of playbooks to run for each "
+            "invocation of ansible-playbook, and an optional log file "
+            "to write the output to.  If you are using this, do not use "
+            "--setup-yml - instead, write the setup playbooks to each line."
+        ),
+    )
+    parser.add_argument(
+        "--batch-report",
+        default=os.environ.get("LSR_QEMU_BATCH_REPORT"),
+        help=(
+            "text file - write the result of each batch to this file - "
+            "contents are the batch file, but with the numeric exit code "
+            "of the playbook run appended to each line."
+        ),
+    )
+    parser.add_argument(
+        "--log-file",
+        default=os.environ.get("LSR_QEMU_LOG_FILE"),
+        help=(
+            "path of file to write Ansible output into.  default is "
+            "None which means stdout/stderr."
+        ),
+    )
+    parser.add_argument(
+        "--log-level",
+        default=os.environ.get("LSR_QEMU_LOG_LEVEL", "warning"),
+        help=("log level for Python logging module.  Default is warning."),
+    )
+    parser.add_argument(
+        "--tests-dir",
+        default=os.environ.get("LSR_QEMU_TESTS_DIR"),
+        help=(
+            "path of directory to use as current directory when running "
+            "tests.  This is usually the directory where the provision.fmf "
+            "is found.  The default is the directory of the first playbook "
+            "(setup-yml excluded)."
+        ),
+    )
+    return parser
+
+
+def main():
+    """Execute the main function."""
+    parser = get_arg_parser()
     # any remaining args are assumed to be ansible-playbook args or playbooks
     args, ansible_args = parser.parse_known_args()
+
     args.ansible_args = ansible_args
     if not args.setup_yml and "LSR_QEMU_SETUP_YML" in os.environ:
         args.setup_yml = os.environ["LSR_QEMU_SETUP_YML"].split(",")
-
+    logging.getLogger().setLevel(getattr(logging, args.log_level.upper()))
     # either image-name or image-file must be given
     if not any([args.image_name, args.image_file]) or all(
         [args.image_name, args.image_file]
@@ -1106,6 +1302,10 @@ def main():
         write_inventory=args.write_inventory,
         erase_old_snapshot=args.erase_old_snapshot,
         post_snap_sleep_time=args.post_snap_sleep_time,
+        batch_file=args.batch_file,
+        batch_report=args.batch_report,
+        log_file=args.log_file,
+        tests_dir=args.tests_dir,
     )
 
 

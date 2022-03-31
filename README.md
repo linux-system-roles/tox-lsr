@@ -464,7 +464,10 @@ You must provide one of `--image-file` or `--image-name`.
 * `--setup-yml` - You can specify one or more of your own setup.yml playbooks to
   use in addition to the setup steps in the `config` file.  The corresponding
   environment variable is `LSR_QEMU_SETUP_YML`, which is a comma-delimited list
-  of playbook files.
+  of playbook files.  These setup playbooks should be playbooks which would be
+  applied to the snapshot if using `--use-snapshot`.  If you have playbooks
+  which do other types of per-test setup, do not use `--setup-yml`.  Just specify
+  them in order on the command line after all of the arguments.
 * `--write-inventory` - Specify a file to write the generated inventory to.  The
   filename must be simply `inventory`, or must end in `.yml`.  Examples:
   `/path/to/inventory` or `/tmp/inventory.xxx.yml`.  The user is responsible for
@@ -481,6 +484,27 @@ You must provide one of `--image-file` or `--image-name`.
   to figure out how long to sleep after creating the snapshot. The default value
   is `1` second.  The corresponding environment variable is
   `LSR_QEMU_POST_SNAP_SLEEP_TIME`.
+* `--batch-file` and `--batch-report` - see below
+* `--log-file` - by default, output from ansible and other commands go to
+  stdout/stderr - if you pass in a path to a file, the logs will be written to
+  this file - the file is opened with `"a"` so if you want a new file you should
+  remove it first.  The corresponding environment variable is
+  `LSR_QEMU_LOG_FILE`.
+* `--log-level` - default is `warning`.  The corresponding environment variable
+  is `LSR_QEMU_LOG_LEVEL`.  It is recommended to use `info` if you are using
+  `--batch-file` so you can see what it is doing.
+* `--tests-dir` - this is used to specify the directory where the main test
+  playbook is located, usually the directory containing the `provision.fmf` used
+  for the test.  `runqemu` allows specifying multiple playbooks to run.  By default
+  the tests directory is the directory of the first playbook.  However, in some cases
+  you may need to specify setup playbooks to run before the test.  e.g.
+  `runqemu ... save-state.yml /path/to/tests/tests_1.yml ...`
+  In that case, you need to tell `runqemu` where is the main `tests` directory:
+  `runqemu --tests-dir  /path/to/tests ... save-state.yml /path/to/tests/tests_1.yml ...`
+  The corresponding environment variable is `LSR_QEMU_TESTS_DIR`.
+* `--artifacts` - The path of the directory containing the VM provisioner log files.
+  By default this is `artifacts/` and `artifacts.snap/` in the current directory.
+  The corresponding environment variable is `LSR_QEMU_ARTIFACTS`.
 
 Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
@@ -545,3 +569,44 @@ setenv =
     LSR_QEMU_CACHE = /my/big/partition
     LSR_QEMU_PROFILE = false
 ```
+
+#### batch-file, batch-report
+
+There are cases where you want to run several playbooks in the same running VM,
+but in multiple invocations of `ansible-playbook`.  You can use `--batch-file`
+to run in this mode.  The argument to `--batch-file` is a plain text file.  Each
+line is an invocation of `ansible-playbook`.  The contents of the line are the
+same as the command line arguments to `runqemu`.  You can use almost all of the
+same command-line parameters.  For example:
+```
+--log-file /path/to/test1.log --artifacts /path/to/test1-artifacts --setup-yml /path/to/setup-snapshot.yml --tests-dir /path/to/tests -e some_ansible_var="some ansible value" -- _setup.yml save.yml /path/to/tests/tests_test1.yml restore.yml cleanup.yml
+--log-file /path/to/test2.log --artifacts /path/to/test2-artifacts --setup-yml /path/to/setup-snapshot.yml --tests-dir /path/to/tests -e some_ansible_var="some ansible value" -- _setup.yml save.yml /path/to/tests/tests_test2.yml restore.yml cleanup.yml
+...
+```
+if you pass this as `runqemu.py --batch-file this-file.txt` it will start a VM
+and create an inventory, then run
+```
+ansible-playbook --inventory inventory -e some_ansible_var="some ansible value" _setup.yml save.yml /path/to/tests/tests_test1.yml restore.yml cleanup.yml >> /path/to/test1.log 2>&1
+# artifacts such as default_provisioner.log and the vm logs will go to /path/to/test1-artifacts
+ansible-playbook --inventory inventory -e some_ansible_var="some ansible value" _setup.yml save.yml /path/to/tests/tests_test2.yml restore.yml cleanup.yml >> /path/to/test2.log 2>&1
+# artifacts such as default_provisioner.log and the vm logs will go to /path/to/test2-artifacts
+```
+then it will shutdown the VM.  If you want to leave the VM running for
+debugging, use `--debug` in the *last* entry in the batch file e.g. `--debug
+--log-file /path/to/testN.log ...`
+
+Only the following `runqemu` arguments are supported in batch files:
+`--log-file`, `--artifacts`, `--setup-yml`, `--tests-dir`, and `--debug` (only
+on last line). You can use many/most `ansible-playbook` arguments.
+
+`runqemu` will run *ALL* lines specified in the file, and will exit with an
+error code at the end if *ANY* of the invocations had an error.  If you want to
+know exactly which tests succeeded and failed, and the exit code from each test,
+specify `--batch-report /path/to/file.txt`.  Each line of this file will contain
+the exit code from the run followed by the list of playbooks for that run.
+```
+0 /path/to/tests/tests_default.yml
+0 /path/to/tests/tests_ssh.yml
+2 /path/to/bogus.yml
+```
+Line `N` in the report should correspond to line `N` in the batch file.
