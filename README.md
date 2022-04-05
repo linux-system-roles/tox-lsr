@@ -512,8 +512,9 @@ and playbooks, separate them with a `--` on the command line:
 ```
 tox -e qemu -- --image-name fedora-34 --become --become-user root -- tests_default.yml
 ```
-If you do not have any ansible-playbook arguments, only playbooks, you can omit
-the `--`:
+This is because `runqemu` cannot tell the difference between an Ansible argument
+and a playbook.  If you do not have any ansible-playbook arguments, only
+playbooks, you can omit the `--`:
 ```
 tox -e qemu -- --image-name fedora-34 tests_default.yml
 ```
@@ -586,9 +587,9 @@ same command-line parameters.  For example:
 if you pass this as `runqemu.py --batch-file this-file.txt` it will start a VM
 and create an inventory, then run
 ```
-ansible-playbook --inventory inventory -e some_ansible_var="some ansible value" _setup.yml save.yml /path/to/tests/tests_test1.yml restore.yml cleanup.yml >> /path/to/test1.log 2>&1
+ansible-playbook --inventory inventory -e some_ansible_var="some ansible value" -- _setup.yml save.yml /path/to/tests/tests_test1.yml restore.yml cleanup.yml >> /path/to/test1.log 2>&1
 # artifacts such as default_provisioner.log and the vm logs will go to /path/to/test1-artifacts
-ansible-playbook --inventory inventory -e some_ansible_var="some ansible value" _setup.yml save.yml /path/to/tests/tests_test2.yml restore.yml cleanup.yml >> /path/to/test2.log 2>&1
+ansible-playbook --inventory inventory -e some_ansible_var="some ansible value" -- _setup.yml save.yml /path/to/tests/tests_test2.yml restore.yml cleanup.yml >> /path/to/test2.log 2>&1
 # artifacts such as default_provisioner.log and the vm logs will go to /path/to/test2-artifacts
 ```
 then it will shutdown the VM.  If you want to leave the VM running for
@@ -597,7 +598,21 @@ debugging, use `--debug` in the *last* entry in the batch file e.g. `--debug
 
 Only the following `runqemu` arguments are supported in batch files:
 `--log-file`, `--artifacts`, `--setup-yml`, `--tests-dir`, and `--debug` (only
-on last line). You can use many/most `ansible-playbook` arguments.
+on last line). You can use many/most `ansible-playbook` arguments.  Arguments
+passed in on the `runqemu` command line will be the default values.  Specifying
+arguments in the batch file will override the `runqemu` command line arguments.
+NOTE: With batch file, you can use `runqemu` without providing any playbooks on
+the command line.  However, if you want to provide Ansible arguments on the
+`runqemu` command line, you will need to add `--` to the end of the `runqemu`
+command line, because `runqemu` cannot tell the difference between an Ansible
+argument and a playbook.  Also, it is recommended to put any Ansible arguments
+*after* any `runqemu` arguments. Example:
+```
+runqemu.py --log-level info --batch-file batch.txt --batch-report report.txt \
+  --skip-tags tests::nvme --
+```
+Since `--skip-tags` is an Ansible argument, it should come last, and it must be
+followed by `--`.
 
 `runqemu` will run *ALL* lines specified in the file, and will exit with an
 error code at the end if *ANY* of the invocations had an error.  If you want to
