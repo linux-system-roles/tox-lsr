@@ -663,6 +663,8 @@ def refresh_snapshot(
             )
         if "LOCK_ON_FILE" in test_env_setup:
             del test_env_setup["LOCK_ON_FILE"]
+        if "TEST_INVENTORY" in test_env_setup:
+            del test_env_setup["TEST_INVENTORY"]
         internal_run_ansible_playbooks(
             test_env_setup,
             inventory,
@@ -848,6 +850,8 @@ def run_ansible_playbooks(  # noqa: C901
                 br.write("%d %s\n" % (rc, " ".join(playbooks)))
         if batch_inventory:
             inventory = batch_inventory
+            if "TEST_INVENTORY" in test_env:
+                del test_env["TEST_INVENTORY"]
     stop_qemu(test_env)
     if batch_inventory and os.path.exists(batch_inventory):
         os.unlink(batch_inventory)
