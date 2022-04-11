@@ -996,12 +996,13 @@ def runqemu(
     pre_setup_yml, post_setup_yml = make_setup_yml(
         image, cache, remove_cloud_init, use_snapshot, use_yum_cache
     )
-    if setup_yml is None:
-        setup_yml = []
+    local_setup_yml = []
     if pre_setup_yml:
-        setup_yml.insert(0, pre_setup_yml)
+        local_setup_yml.append(pre_setup_yml)
+    if setup_yml:
+        local_setup_yml.extend(setup_yml)
     if post_setup_yml:
-        setup_yml.append(post_setup_yml)
+        local_setup_yml.append(post_setup_yml)
     if collection_path is None and "TOX_WORK_DIR" in os.environ:
         collection_path = os.environ["TOX_WORK_DIR"]
     test_env = dict(image.get("env", {}))
@@ -1019,7 +1020,7 @@ def runqemu(
         ansible_args = []
     run_ansible_playbooks(
         image,
-        setup_yml,
+        local_setup_yml,
         test_env,
         debug,
         image_alias,
