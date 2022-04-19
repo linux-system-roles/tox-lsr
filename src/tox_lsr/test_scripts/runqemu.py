@@ -364,6 +364,7 @@ def make_setup_yml(
                     "when": [
                         "__cloud_init_reqs is success",
                         "item.1.stdout is match('no package requires ')",
+                        "not item.0 is match('^procps')",
                     ],  # noqa: E501
                     "ignore_errors": True,
                     "no_log": no_log,
