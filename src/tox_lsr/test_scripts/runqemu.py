@@ -462,7 +462,7 @@ def make_setup_yml(
                 },
             )
 
-    if setup_plays:
+    if setup_plays or setup_play["tasks"]:
         if setup_play["tasks"]:
             setup_plays.append(setup_play)
         with open(pre_setup_yml, "w") as syf:
