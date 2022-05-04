@@ -861,23 +861,43 @@ def run_ansible_playbooks(  # noqa: C901
 
 
 def install_requirements(sourcedir, collection_path, test_env):
-    """Install reqs from meta/requirements.yml, if any."""
-    reqfile = os.path.join(sourcedir, "meta", "requirements.yml")
-    if os.path.isfile(reqfile):
-        subprocess.check_call(  # nosec
-            [
-                "ansible-galaxy",
-                "collection",
-                "install",
-                "-p",
-                collection_path,
-                "-vv",
-                "-r",
-                reqfile,
-            ],
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-        )
+    """
+    Install reqs from meta/collection-requirements.yml, if any.
+
+    Also look for legacy meta/requirements.yml - should only be used
+    for roles, but we have been incorrectly using it for collections.
+    If found, use it and warn.
+    """
+    legacy_rqf = "requirements.yml"
+    coll_rqf = "collection-requirements.yml"
+    for rqf in [legacy_rqf, coll_rqf]:
+        reqfile = os.path.join(sourcedir, "meta", rqf)
+        # see if reqfile is in legacy role format
+        if os.path.isfile(reqfile):
+            if rqf == legacy_rqf:
+                with open(reqfile) as rqff:
+                    obj = yaml.safe_load(rqff)
+                    if isinstance(obj, list):
+                        continue  # legacy role format
+                    logging.warning(
+                        "Using %s - please convert to %s instead",
+                        rqf,
+                        coll_rqf,
+                    )
+            subprocess.check_call(  # nosec
+                [
+                    "ansible-galaxy",
+                    "collection",
+                    "install",
+                    "-p",
+                    collection_path,
+                    "-vv",
+                    "-r",
+                    reqfile,
+                ],
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+            )
         test_env["ANSIBLE_COLLECTIONS_PATHS"] = collection_path
 
 
