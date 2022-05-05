@@ -11,7 +11,7 @@ from setuptools import find_packages, setup
 # pylint: disable=R1732
 setup(
     name="tox-lsr",
-    version="2.10.1",
+    version="2.11.0",
     url="https://github.com/linux-system-roles/tox-lsr",
     description="A tox plugin for testing Linux system roles",
     long_description_content_type="text/markdown",
