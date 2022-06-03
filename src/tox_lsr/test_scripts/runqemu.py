@@ -2,6 +2,7 @@
 """Launch qemu tests."""
 
 import argparse
+import datetime
 import errno
 import json
 import logging
@@ -18,6 +19,7 @@ import urllib.parse
 import urllib.request
 from contextlib import contextmanager
 
+import pytz
 import yaml
 
 try:
@@ -847,8 +849,25 @@ def run_ansible_playbooks(  # noqa: C901
             if local_log_file:
                 logging.error("Playbook run failed with error %d", rc)
         if batch_report:
+            tz = time.tzname
+            log_path = test_env["ANSIBLE_LOG_PATH"]
+            if log_path and os.path.exists(log_path):
+                log_tm = datetime.datetime.fromtimestamp(
+                    int(os.path.getmtime(log_path))
+                )
             with open(batch_report, "a") as br:
-                br.write("%d %s\n" % (rc, " ".join(playbooks)))
+                if log_tm:
+                    local_tm = (
+                        str(pytz.timezone(tz[0]).localize(log_tm))
+                        .split(" ")[1]
+                        .split("-")[0]
+                    )
+                    br.write(
+                        "%d %s :: [ %s ]\n"
+                        % (rc, " ".join(playbooks), local_tm)
+                    )
+                else:
+                    br.write("%d %s\n" % (rc, " ".join(playbooks)))
         if batch_inventory:
             inventory = batch_inventory
             if "TEST_INVENTORY" in test_env:
