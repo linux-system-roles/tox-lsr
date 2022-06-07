@@ -1301,6 +1301,14 @@ def get_arg_parser():
             "(setup-yml excluded)."
         ),
     )
+    parser.add_argument(
+        "--sourcedir",
+        default=os.environ.get("LSR_QEMU_SOURCE_DIR"),
+        help=(
+            "path of directory to use as current source directory when running "
+            "tests."
+        ),
+    )
     return parser
 
 
@@ -1351,6 +1359,7 @@ def main():
         batch_report=args.batch_report,
         log_file=args.log_file,
         tests_dir=args.tests_dir,
+        sourcedir=args.sourcedir,
     )
 
 
