@@ -917,7 +917,7 @@ def install_requirements(sourcedir, collection_path, test_env):
                 stdout=sys.stdout,
                 stderr=sys.stderr,
             )
-        test_env["ANSIBLE_COLLECTIONS_PATHS"] = collection_path
+            test_env["ANSIBLE_COLLECTIONS_PATHS"] = collection_path
 
 
 def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
