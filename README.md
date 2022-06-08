@@ -484,7 +484,7 @@ You must provide one of `--image-file` or `--image-name`.
   to figure out how long to sleep after creating the snapshot. The default value
   is `1` second.  The corresponding environment variable is
   `LSR_QEMU_POST_SNAP_SLEEP_TIME`.
-* `--batch-file` and `--batch-report` - see below
+* `--batch-file`, `--batch-report`, `--batch-id` - see below
 * `--log-file` - by default, output from ansible and other commands go to
   stdout/stderr - if you pass in a path to a file, the logs will be written to
   this file - the file is opened with `"a"` so if you want a new file you should
@@ -571,7 +571,7 @@ setenv =
     LSR_QEMU_PROFILE = false
 ```
 
-#### batch-file, batch-report
+#### batch-file, batch-report, batch-id
 
 There are cases where you want to run several playbooks in the same running VM,
 but in multiple invocations of `ansible-playbook`.  You can use `--batch-file`
@@ -580,8 +580,8 @@ line is an invocation of `ansible-playbook`.  The contents of the line are the
 same as the command line arguments to `runqemu`.  You can use almost all of the
 same command-line parameters.  For example:
 ```
---log-file /path/to/test1.log --artifacts /path/to/test1-artifacts --setup-yml /path/to/setup-snapshot.yml --tests-dir /path/to/tests -e some_ansible_var="some ansible value" -- _setup.yml save.yml /path/to/tests/tests_test1.yml restore.yml cleanup.yml
---log-file /path/to/test2.log --artifacts /path/to/test2-artifacts --setup-yml /path/to/setup-snapshot.yml --tests-dir /path/to/tests -e some_ansible_var="some ansible value" -- _setup.yml save.yml /path/to/tests/tests_test2.yml restore.yml cleanup.yml
+--log-file /path/to/test1.log --artifacts /path/to/test1-artifacts --setup-yml /path/to/setup-snapshot.yml --tests-dir /path/to/tests -e some_ansible_var="some ansible value" --batch-id tests_test1.yml -- _setup.yml save.yml /path/to/tests/tests_test1.yml restore.yml cleanup.yml
+--log-file /path/to/test2.log --artifacts /path/to/test2-artifacts --setup-yml /path/to/setup-snapshot.yml --tests-dir /path/to/tests -e some_ansible_var="some ansible value" --batch-id tests_test2.yml -- _setup.yml save.yml /path/to/tests/tests_test2.yml restore.yml cleanup.yml
 ...
 ```
 if you pass this as `runqemu.py --batch-file this-file.txt` it will start a VM
@@ -593,20 +593,23 @@ ansible-playbook --inventory inventory -e some_ansible_var="some ansible value" 
 # artifacts such as default_provisioner.log and the vm logs will go to /path/to/test2-artifacts
 ```
 then it will shutdown the VM.  If you want to leave the VM running for
-debugging, use `--debug` in the *last* entry in the batch file e.g. `--debug
---log-file /path/to/testN.log ...`
+debugging, use `--debug` in the *last* entry in the batch file e.g.
+`--debug --log-file /path/to/testN.log ...`
 
 Only the following `runqemu` arguments are supported in batch files:
 `--log-file`, `--artifacts`, `--setup-yml`, `--tests-dir`, and `--debug` (only
-on last line). You can use many/most `ansible-playbook` arguments.  Arguments
-passed in on the `runqemu` command line will be the default values.  Specifying
-arguments in the batch file will override the `runqemu` command line arguments.
-NOTE: With batch file, you can use `runqemu` without providing any playbooks on
-the command line.  However, if you want to provide Ansible arguments on the
-`runqemu` command line, you will need to add `--` to the end of the `runqemu`
-command line, because `runqemu` cannot tell the difference between an Ansible
-argument and a playbook.  Also, it is recommended to put any Ansible arguments
-*after* any `runqemu` arguments. Example:
+on last line). In addition, there is an argument used only in batch files -
+`--batch-id` - which you can use as an identifier to correlate lines in your
+batch file with the corresponding line in your batch report file. You can use
+many/most `ansible-playbook` arguments.  Arguments passed in on the `runqemu`
+command line will be the default values.  Specifying arguments in the batch file
+will override the `runqemu` command line arguments. NOTE: With batch file, you
+can use `runqemu` without providing any playbooks on the command line.  However,
+if you want to provide Ansible arguments on the `runqemu` command line, you will
+need to add `--` to the end of the `runqemu` command line, because `runqemu`
+cannot tell the difference between an Ansible argument and a playbook.  Also, it
+is recommended to put any Ansible arguments *after* any `runqemu` arguments.
+Example:
 ```
 runqemu.py --log-level info --batch-file batch.txt --batch-report report.txt \
   --skip-tags tests::nvme --
@@ -618,10 +621,16 @@ followed by `--`.
 error code at the end if *ANY* of the invocations had an error.  If you want to
 know exactly which tests succeeded and failed, and the exit code from each test,
 specify `--batch-report /path/to/file.txt`.  Each line of this file will contain
-the exit code from the run followed by the list of playbooks for that run.
+the following in this order:
+* the exit code from the run
+* the timestamp when the run started in sec.usec format
+* the timestamp when the run finished in sec.usec format
+* the batch-id, if any
+* the list of playbooks for that run
 ```
-0 /path/to/tests/tests_default.yml
-0 /path/to/tests/tests_ssh.yml
-2 /path/to/bogus.yml
+0 1654718873.937814 1654718878.705445 tests_default.yml /path/to/tests/tests_default.yml
+0 1654718879.937814 1654718881.705445 tests_ssh.yml /path/to/tests/tests_ssh.yml
+2 1654718879.937814 1654718881.705445 bogus.yml /path/to/bogus.yml
 ```
-Line `N` in the report should correspond to line `N` in the batch file.
+Line `N` in the report should correspond to line `N` in the batch file, and you
+can also use the batch-id for correlation.

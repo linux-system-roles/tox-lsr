@@ -828,6 +828,7 @@ def run_ansible_playbooks(  # noqa: C901
         if local_log_file:
             logging.info("Running playbooks %s", str(playbooks))
         rc = 0
+        start_ts = time.time()
         try:
             internal_run_ansible_playbooks(
                 test_env,
@@ -847,8 +848,21 @@ def run_ansible_playbooks(  # noqa: C901
             if local_log_file:
                 logging.error("Playbook run failed with error %d", rc)
         if batch_report:
+            if args.batch_id:
+                batch_id_str = " " + args.batch_id
+            else:
+                batch_id_str = ""
             with open(batch_report, "a") as br:
-                br.write("%d %f %s\n" % (rc, time.time(), " ".join(playbooks)))
+                br.write(
+                    "%d %f %f%s %s\n"
+                    % (
+                        rc,
+                        start_ts,
+                        time.time(),
+                        batch_id_str,
+                        " ".join(playbooks),
+                    )
+                )
         if batch_inventory:
             inventory = batch_inventory
             if "TEST_INVENTORY" in test_env:
@@ -1280,6 +1294,20 @@ def get_arg_parser():
             "tests.  This is usually the directory where the provision.fmf "
             "is found.  The default is the directory of the first playbook "
             "(setup-yml excluded)."
+        ),
+    )
+    parser.add_argument(
+        "--batch-id",
+        default=os.environ.get("LSR_QEMU_BATCH_ID"),
+        help=(
+            "Identifier for each line in the batch file.  This option is "
+            "only useful in a batch file.  This is used to identify each "
+            "line in the batch file to correlate it with its corresponding "
+            "line in the batch report.  For example, if you used this in "
+            "your batch file:\n"
+            "--batch-id my_test_name -- setup.yml pb.yml cleanup.yml\n"
+            "Then your batch report file line for this would be:\n"
+            "0 start_ts end_ts my_test_name setup.yml ...."
         ),
     )
     return parser
