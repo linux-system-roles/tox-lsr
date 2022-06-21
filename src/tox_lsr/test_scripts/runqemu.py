@@ -3,6 +3,7 @@
 
 import argparse
 import errno
+import glob
 import json
 import logging
 import os
@@ -270,7 +271,7 @@ def centoshtml2image(url, desiredarch):
         if td.a["href"].endswith(".qcow2")
     ]
     pat = (
-        r"CentOS-Stream-GenericCloud-%s-\([1-9][0-9]+[.][0-9]+\)[.]%s[.]qcow2"
+        r"CentOS-Stream-GenericCloud-{}-\([1-9][0-9]+[.][0-9]+\)[.]{}[.]qcow2"
     )
     namematch = re.compile(pat.format(centosver, desiredarch))
 
@@ -545,13 +546,13 @@ def download_image(image, cache):
     if "file" not in image:
         image_url = get_url(image)
         if not image_url:
-            formatstr = "Could not determine download URL for %s from %s."
+            formatstr = "Could not determine download URL for {} from {}."
             errstr = formatstr.format(image["name"], image)
             logging.critical(errstr)
             raise Exception(errstr)
         image_path = fetch_image(image_url, cache, image["name"])
         if not image_path:
-            formatstr = "Could not download image %s from URL %s."
+            formatstr = "Could not download image {} from URL {}."
             errstr = formatstr.format(image["name"], image_url)
             logging.critical(errstr)
             raise Exception(errstr)
@@ -748,9 +749,10 @@ def split_args_and_playbooks(args_and_playbooks):
 
 def handle_vault(tests_dir, ansible_args, playbooks, test_env):
     """Handle Ansible Vault encrypted variables."""
-    vault_pwd_file = os.path.join(tests_dir, "vault_pwd")
-    vault_variables_file = os.path.join(
-        tests_dir, "vars", "vault-variables.yml"
+    vault_pwd_file = os.path.abspath(os.path.join(tests_dir, "vault_pwd"))
+    logging.debug("handle_vault: tests_dir [%s] vault_pwd_file [%s]", tests_dir, vault_pwd_file)
+    vault_variables_file = os.path.abspath(
+        os.path.join(tests_dir, "vars", "vault-variables.yml")
     )
     ev_arg = "--extra-vars=@{}".format(vault_variables_file)
     if os.path.exists(vault_pwd_file) and os.path.exists(vault_variables_file):
@@ -856,6 +858,20 @@ def get_batches_from_playbooks_and_args(
     return batches
 
 
+def make_batch_file(batch_file, tests_dir, ansible_args):
+    if tests_dir is None:
+        tests_dir = "tests"
+    tests = glob.glob(tests_dir + "/tests_*.yml")
+    fmtstr = "--tests-dir {} --log-file {{}} ".format(tests_dir)
+    for aarg in ansible_args:
+        fmtstr = fmtstr + "{} ".format(aarg)
+    fmtstr = fmtstr + "-- {}\n"
+    with open(batch_file, "w") as bf:
+        for test in tests:
+            bfline = fmtstr.format(test + ".log", test)
+            bf.write(bfline)
+
+
 def run_ansible_playbooks(  # noqa: C901
     image,
     setup_yml,
@@ -877,11 +893,16 @@ def run_ansible_playbooks(  # noqa: C901
     batch_report,
     log_file,
     tests_dir,
+    make_batch,
 ):
     """Run the given playbooks."""
     test_env.update(dict(os.environ))
     orig_inventory = inventory
     ansible_args, playbooks = split_args_and_playbooks(ansible_args)
+    if make_batch:
+        batch_file = "batch.txt"
+        batch_report = "batch.report"
+        make_batch_file(batch_file, tests_dir, ansible_args)
     batches = get_batches_from_playbooks_and_args(
         ansible_args, playbooks, setup_yml, cleanup_yml, batch_file
     )
@@ -1188,6 +1209,7 @@ def runqemu(
     log_file=None,
     tests_dir=None,
     collection=False,
+    make_batch=None,
 ):
     """Download the image, set up, run playbooks."""
     if write_inventory:
@@ -1250,6 +1272,7 @@ def runqemu(
         batch_report,
         log_file,
         tests_dir,
+        make_batch,
     )
 
 
@@ -1507,6 +1530,14 @@ def get_arg_parser():
             "an EL6 host."
         ),
     )
+    parser.add_argument(
+        "--make-batch",
+        action="store_true",
+        default=bool(strtobool(os.environ.get("LSR_QEMU_MAKE_BATCH", "False"))),
+        help=(
+            "Create a batch file from all of the tests/tests_*.yml and run it."
+        ),
+    )
     return parser
 
 
@@ -1563,6 +1594,7 @@ def main():
         log_file=args.log_file,
         tests_dir=args.tests_dir,
         collection=args.collection,
+        make_batch=args.make_batch,
     )
 
 

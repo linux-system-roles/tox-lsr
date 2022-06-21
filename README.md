@@ -527,6 +527,8 @@ You must provide one of `--image-file` or `--image-name`.
 * `--ssh-el6` - default is `false`.  If `true`, the system is an EL6 system
   which requires some additional SSH configuration.  The corresponding
   environment variable is `LSR_QEMU_SSH_EL6`.
+* `--make-batch` - This tells runqemu to create a batch file from all of the
+  files matching `tests/tests_*.yml` and run using this batch file.
 
 Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
@@ -602,8 +604,8 @@ line is an invocation of `ansible-playbook`.  The contents of the line are the
 same as the command line arguments to `runqemu`.  You can use almost all of the
 same command-line parameters.  For example:
 ```
---log-file /path/to/test1.log --artifacts /path/to/test1-artifacts --setup-yml /path/to/setup-snapshot.yml --tests-dir /path/to/tests -e some_ansible_var="some ansible value" --batch-id tests_test1.yml -- _setup.yml save.yml /path/to/tests/tests_test1.yml --cleanup-yml restore.yml --cleanup-yml cleanup.yml
---log-file /path/to/test2.log --artifacts /path/to/test2-artifacts --setup-yml /path/to/setup-snapshot.yml --tests-dir /path/to/tests -e some_ansible_var="some ansible value" --batch-id tests_test2.yml -- _setup.yml save.yml /path/to/tests/tests_test2.yml --cleanup-yml restore.yml --cleanup-yml cleanup.yml
+--log-file /path/to/test1.log --artifacts /path/to/test1-artifacts --setup-yml /path/to/setup-snapshot.yml --tests-dir /path/to/tests -e some_ansible_var="some ansible value" --batch-id tests_test1.yml --cleanup-yml restore.yml --cleanup-yml cleanup.yml -- _setup.yml save.yml /path/to/tests/tests_test1.yml
+--log-file /path/to/test2.log --artifacts /path/to/test2-artifacts --setup-yml /path/to/setup-snapshot.yml --tests-dir /path/to/tests -e some_ansible_var="some ansible value" --batch-id tests_test2.yml --cleanup-yml restore.yml --cleanup-yml cleanup.yml -- _setup.yml save.yml /path/to/tests/tests_test2.yml
 ...
 ```
 if you pass this as `runqemu.py --batch-file this-file.txt` it will start a VM
@@ -617,6 +619,14 @@ ansible-playbook --inventory inventory -e some_ansible_var="some ansible value" 
 then it will shutdown the VM.  If you want to leave the VM running for
 debugging, use `--debug` in the *last* entry in the batch file e.g.
 `--debug --log-file /path/to/testN.log ...`
+
+Use `--make-batch` to create a batch file using all of the files matching
+`tests/tests_*.yml`, and run the tests.  This will create the files `batch.txt`
+and `batch.report` in the current directory.
+`tox -e qemu-ansible-core-2.15 -- --image-name centos-9 --log-level debug --make-batch --`
+You must specify the trailing `--` on the command line to tell runqemu that
+there are no more arguments.  You can then edit the `batch.txt` file to remove
+files, change arguments, etc. and re-run using `--batch-file batch.txt`.
 
 Only the following `runqemu` arguments are supported in batch files:
 `--log-file`, `--artifacts`, `--setup-yml`, `--tests-dir`, `--cleanup-yml`, and
