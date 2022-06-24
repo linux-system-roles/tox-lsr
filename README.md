@@ -384,6 +384,7 @@ tests:
 * `qemu` - tests against the latest version of ansible supported by the roles
 * `qemu-ansible-core-2.11` - tests against ansible-core 2.11
 * `qemu-ansible-core-2.12` - tests against ansible-core 2.12
+* `qemu-ansible-core-2.13` - tests against ansible-core 2.13
 
 These tests run in one of two modes, depending on which of the following
 arguments you provide.  Note that you must use `--` on the command line after
