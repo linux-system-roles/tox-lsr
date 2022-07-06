@@ -9,7 +9,7 @@ jobs:
     strategy:
       matrix:
         # note 3.11 not working as of 2022-02-23 - revisit soon
-        pyver: ['2.7', '3.6', '3.8', '3.9', '3.10']
+        pyver: ['2.7', '3.6', '3.8', '3.9', '3.10', '3.11']
     steps:
       - name: checkout PR
         uses: actions/checkout@v2
@@ -28,6 +28,7 @@ jobs:
           toxpyver=$(echo "${{ matrix.pyver }}" | tr -d .)
           case "$toxpyver" in
           *-alpha*|*-beta*) toxpyver=$(echo "$toxpyver" | sed 's/^.* \([1-9][0-9]*\)$/\1/') ;;
+          27) export SAFETY_CMD="echo skipping safety" ;;
           esac
           toxpyenv="py${toxpyver}-tox30"
           # run python unit tests only on the toxenv that matches the
