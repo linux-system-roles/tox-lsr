@@ -55,6 +55,9 @@ INVENTORY_FAIL_MSG = "ERROR: Inventory is empty, tests did not run"
 DEFAULT_PROFILE_TASK_LIMIT = 30  # report up to 30 tasks in profile
 DEFAULT_POST_SNAP_SLEEP_TIME = 1  # seconds
 
+COLLECTION_NAMESPACE = "fedora"
+COLLECTION_NAME = "linux_system_roles"
+
 
 def strtobool(val):
     """
@@ -874,7 +877,7 @@ def run_ansible_playbooks(  # noqa: C901
         raise Exception("One or more tests failed")
 
 
-def install_requirements(sourcedir, collection_path, test_env):
+def install_requirements(sourcedir, collection_path, test_env, collection):
     """
     Install reqs from meta/collection-requirements.yml, if any.
 
@@ -882,6 +885,31 @@ def install_requirements(sourcedir, collection_path, test_env):
     for roles, but we have been incorrectly using it for collections.
     If found, use it and warn.
     """
+    collection_save_file = None
+    force_flag = None
+    if collection:
+        save_collection = os.path.join(
+            collection_path,
+            "ansible_collections",
+            COLLECTION_NAMESPACE,
+            COLLECTION_NAME,
+        )
+        if os.path.exists(save_collection):
+            # ansible-galaxy collection install will overwrite
+            # fedora/linux_system_roles
+            # so we have to save a copy and restore it later
+            collection_save_file = os.path.join(
+                collection_path, "collection.save.tar"
+            )
+            subprocess.check_call(  # nosec
+                [
+                    "tar",
+                    "cfP",
+                    collection_save_file,
+                    save_collection,
+                ]
+            )
+            force_flag = "--force"
     legacy_rqf = "requirements.yml"
     coll_rqf = "collection-requirements.yml"
     for rqf in [legacy_rqf, coll_rqf]:
@@ -898,21 +926,34 @@ def install_requirements(sourcedir, collection_path, test_env):
                         rqf,
                         coll_rqf,
                     )
+            ag_cmd = [
+                "ansible-galaxy",
+                "collection",
+                "install",
+                "-p",
+                collection_path,
+                "-vvv",
+                "-r",
+                reqfile,
+            ]
+            if force_flag:
+                ag_cmd.append(force_flag)
             subprocess.check_call(  # nosec
-                [
-                    "ansible-galaxy",
-                    "collection",
-                    "install",
-                    "-p",
-                    collection_path,
-                    "-vv",
-                    "-r",
-                    reqfile,
-                ],
+                ag_cmd,
                 stdout=sys.stdout,
                 stderr=sys.stderr,
             )
             test_env["ANSIBLE_COLLECTIONS_PATHS"] = collection_path
+    if collection_save_file:
+        subprocess.check_call(  # nosec
+            [
+                "tar",
+                "xfP",
+                collection_save_file,
+                "--overwrite",
+            ]
+        )
+        os.unlink(collection_save_file)
 
 
 def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
@@ -1015,6 +1056,7 @@ def runqemu(
     batch_report=None,
     log_file=None,
     tests_dir=None,
+    collection=False,
 ):
     """Download the image, set up, run playbooks."""
     if write_inventory:
@@ -1048,7 +1090,7 @@ def runqemu(
         test_env["TEST_YUM_CACHE_PATHS"] = yum_cache_path
         yum_varlib_path = os.path.join(cache, image["name"] + "_yum_varlib")
         test_env["TEST_YUM_VARLIB_PATHS"] = yum_varlib_path
-    install_requirements(sourcedir, collection_path, test_env)
+    install_requirements(sourcedir, collection_path, test_env, collection)
     inventory = get_inventory_script(inventory)
     setup_callback_plugins(pretty, profile, profile_task_limit, test_env)
     if ansible_args is None:
@@ -1360,6 +1402,7 @@ def main():
         batch_report=args.batch_report,
         log_file=args.log_file,
         tests_dir=args.tests_dir,
+        collection=args.collection,
     )
 
 
