@@ -8,8 +8,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # note 3.11 not working as of 2022-02-23 - revisit soon
-        pyver: ['2.7', '3.6', '3.8', '3.9', '3.10', '3.11']
+        # note 3.11 not working as of 2022-07-05 - revisit soon
+        pyver: ['2.7', '3.6', '3.8', '3.9', '3.10']
     steps:
       - name: checkout PR
         uses: actions/checkout@v2
