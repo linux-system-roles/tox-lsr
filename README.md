@@ -635,3 +635,41 @@ the following in this order:
 ```
 Line `N` in the report should correspond to line `N` in the batch file, and you
 can also use the batch-id for correlation.
+
+#### Ansible Vault support
+
+If you want to test using variables encrypted with
+[Ansible Vault](https://docs.ansible.com/ansible/latest/user_guide/vault.html) do the
+following:
+* put the password in the file `tests/vault_pwd` e.g. `echo -n password > tests/vault_pwd`
+* `mkdir tests/vars`
+* encrypt the variables
+```
+ansible-vault encrypt_string --vault-password-file tests/vault_pwd my_secret_value \
+  --name my_secret_var_name >> tests/vars/vault-variables.yml
+ansible-vault encrypt_string --vault-password-file tests/vault_pwd another_value \
+  --name another_var >> tests/vars/vault-variables.yml
+```
+Then if you run
+```
+tox -e qemu-... -- --image-name name tests/tests_that_uses_my_secret_value.yml
+```
+the variable `my_secret_var_name` will be automatically decrypted.  It is a good
+idea to test roles that use passwords, keys, tokens, etc. with vault to ensure
+that encryption works according to our documentation.
+
+There may be some tests that you want to run without the variable being defined.
+For example, there are some roles that always require a password to be provided
+by the user, and some tests want to check the failure mode if there is no
+password.  That is, you want to provide an encrypted password for all tests
+except certain ones.  In that case, create the file
+`tests/no-vault-variables.txt` containing the *basename* of the tests you want
+to skip, one per line.  For example, if you want to run all tests except
+tests_a.yml and tests_b.yml with the encrypted passwords, create the file
+`tests/no-vault-variables.txt` like this:
+```
+tests_a.yml
+tests_b.yml
+```
+Then you can run `tox -e qemu-... -- tests/tests_a.yml` and the vault encrypted
+variables will not be defined.
