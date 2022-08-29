@@ -710,7 +710,7 @@ def split_args_and_playbooks(args_and_playbooks):
     return args, playbooks
 
 
-def handle_vault(tests_dir, ansible_args, playbooks):
+def handle_vault(tests_dir, ansible_args, playbooks, test_env):
     """Handle Ansible Vault encrypted variables."""
     vault_pwd_file = os.path.join(tests_dir, "vault_pwd")
     vault_variables_file = os.path.join(
@@ -718,7 +718,7 @@ def handle_vault(tests_dir, ansible_args, playbooks):
     )
     ev_arg = "--extra-vars=@{}".format(vault_variables_file)
     if os.path.exists(vault_pwd_file) and os.path.exists(vault_variables_file):
-        os.environ["ANSIBLE_VAULT_PASSWORD_FILE"] = vault_pwd_file
+        test_env["ANSIBLE_VAULT_PASSWORD_FILE"] = vault_pwd_file
         no_vault_file = os.path.join(tests_dir, "no-vault-variables.txt")
         if os.path.exists(no_vault_file):
             no_vault_tests = set(
@@ -741,8 +741,8 @@ def handle_vault(tests_dir, ansible_args, playbooks):
         elif ev_arg not in ansible_args:
             ansible_args.append(ev_arg)
     else:
-        if "ANSIBLE_VAULT_PASSWORD_FILE" in os.environ:
-            del os.environ["ANSIBLE_VAULT_PASSWORD_FILE"]
+        if "ANSIBLE_VAULT_PASSWORD_FILE" in test_env:
+            del test_env["ANSIBLE_VAULT_PASSWORD_FILE"]
         if ev_arg in ansible_args:
             ansible_args.remove(ev_arg)
     if ev_arg in ansible_args:
@@ -867,7 +867,7 @@ def run_ansible_playbooks(  # noqa: C901
             )
         else:
             playbooks = local_setup_yml + playbooks
-        handle_vault(cwd, ansible_args, playbooks)
+        handle_vault(cwd, ansible_args, playbooks, test_env)
         if local_log_file:
             logging.info("Running playbooks %s", str(playbooks))
         rc = 0
