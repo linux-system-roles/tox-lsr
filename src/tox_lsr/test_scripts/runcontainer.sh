@@ -102,24 +102,48 @@ refresh_test_container() {
 
     # shellcheck disable=SC2086
     if [ "$erase_old_snapshot" = true ] || [ "$created" -lt "$age" ]; then
+        local pkgcmd prepkgs initpkgs image_name
+        case "$CONTAINER_IMAGE_NAME" in
+        *-7) pkgcmd=yum ;
+             initpkgs="" ;
+             prepkgs="" ;;
+        *-8) pkgcmd=dnf ;
+             initpkgs="" ;
+             prepkgs="" ;;
+        *-9) pkgcmd=dnf ;
+             initpkgs=systemd ;
+             prepkgs="dnf-plugins-core" ;;
+        *) pkgcmd=dnf; prepkgs="" ;;
+        esac
+        image_name="$CONTAINER_BASE_IMAGE"
+        if [ -n "${initpkgs:-}" ]; then
+            # some images do not have the entrypoint, so that must be installed
+            # first
+            container_id=$(podman run -d $CONTAINER_OPTS ${LSR_CONTAINER_OPTS:-} \
+                $CONTAINER_MOUNTS "$image_name" sleep 3600)
+            if [ -z "$container_id" ]; then
+                echo ERROR: Failed to start container
+                return 1
+            fi
+            if ! podman exec -i "$container_id" "$pkgcmd" install -y $initpkgs; then
+                podman rm -f "$container_id"
+                return 1
+            fi
+            if ! podman container commit "$container_id" "$CONTAINER_IMAGE"; then
+                podman rm -f "$container_id"
+                return 1
+            fi
+            podman rm -f "$container_id"
+            image_name="$CONTAINER_IMAGE"
+        fi
         container_id=$(podman run -d $CONTAINER_OPTS ${LSR_CONTAINER_OPTS:-} \
-            $CONTAINER_MOUNTS "$CONTAINER_BASE_IMAGE" "$CONTAINER_ENTRYPOINT")
+            $CONTAINER_MOUNTS "$image_name" "$CONTAINER_ENTRYPOINT")
         if [ -z "$container_id" ]; then
             echo ERROR: Failed to start container
             return 1
         fi
         # shellcheck disable=SC2064
         trap "podman rm -f $container_id" RETURN
-        local pkgcmd prepkgs
-        case "$CONTAINER_IMAGE_NAME" in
-        *-7) pkgcmd=yum ;
-             prepkgs="" ;;
-        *-8) pkgcmd=dnf ;
-             prepkgs="" ;;
-        *-9) pkgcmd=dnf ;
-             prepkgs="dnf-plugins-core" ;;
-        *) pkgcmd=dnf; prepkgs="" ;;
-        esac
         if [ -n "${prepkgs:-}" ]; then
             if ! podman exec -i "$container_id" "$pkgcmd" install -y $prepkgs; then
                 return 1
