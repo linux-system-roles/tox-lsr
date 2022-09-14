@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -euxo pipefail
+set -euo pipefail
 
 CONTAINER_OPTS="--privileged --systemd=true --hostname ${CONTAINER_HOSTNAME:-sut}"
 CONTAINER_MOUNTS="-v /sys/fs/cgroup:/sys/fs/cgroup"
@@ -11,14 +11,61 @@ CONTAINER_MOUNTS="-v /sys/fs/cgroup:/sys/fs/cgroup"
 CONTAINER_AGE=${CONTAINER_AGE:-24}  # hours
 CONTAINER_TESTS_PATH=${CONTAINER_TESTS_PATH:-"$TOXINIDIR/tests"}
 CONTAINER_SKIP_TAGS=${CONTAINER_SKIP_TAGS:---skip-tags tests::no_container}
-CONFIG=$HOME/.config/linux-system-roles.json
+CONTAINER_CONFIG="$HOME/.config/linux-system-roles.json"
 
-COLLECTION_BASE_PATH=${COLLECTION_BASE_PATH:-$TOX_WORK_DIR}
+COLLECTION_BASE_PATH="${COLLECTION_BASE_PATH:-$TOX_WORK_DIR}"
+export ANSIBLE_COLLECTIONS_PATHS="${ANSIBLE_COLLECTIONS_PATHS:-$COLLECTION_BASE_PATH}"
+LOCAL_COLLECTION="${LOCAL_COLLECTION:-fedora/linux_system_roles}"
+
+logit() {
+    local level
+    level="$1"; shift
+    echo ::"$level" "$(date -Isec)" "$@"
+}
+
+info() {
+    logit info "$@"
+}
+
+notice() {
+    logit notice "$@"
+}
+
+warning() {
+    logit warning "$@"
+}
+
+error() {
+    logit error "$@"
+}
 
 install_requirements() {
-    if [ -f meta/requirements.yml ]; then
-        ansible-galaxy collection install -p "$COLLECTION_BASE_PATH" -vv -r meta/requirements.yml
-        export ANSIBLE_COLLECTIONS_PATHS="${ANSIBLE_COLLECTIONS_PATHS:-$COLLECTION_BASE_PATH}"
+    local rq save_tar force update coll_path
+    # see what capabilities ansible-galaxy has
+    if ansible-galaxy collection install --help 2>&1 | grep -q -- --force; then
+        force=--force
+    fi
+    if ansible-galaxy collection install --help 2>&1 | grep -q -- --upgrade; then
+        upgrade=--upgrade
+    fi
+    coll_path="$COLLECTION_BASE_PATH/ansible_collections"
+    if [ -d "$coll_path/$LOCAL_COLLECTION" ]; then
+        info saving local collection at "$coll_path/$LOCAL_COLLECTION"
+        save_tar="$(mktemp)"
+        tar cfP "$save_tar" -C "$coll_path" "$LOCAL_COLLECTION"
+        trap "rm -f $save_tar" RETURN
+    fi
+    for rq in meta/requirements.yml meta/collection-requirements.yml; do
+        if [ -f "$rq" ]; then
+            if [ "$rq" = meta/requirements.yml ]; then
+                warning use meta/collection-requirements.yml instead of "$rq"
+            fi
+            ansible-galaxy collection install ${force:-} ${upgrade:-} -p "$COLLECTION_BASE_PATH" -vv -r "$rq"
+        fi
+    done
+    if [ -n "${save_tar:-}" ] && [ -f "${save_tar:-}" ]; then
+        tar xfP "$save_tar" -C "$coll_path" --overwrite
+        info restoring local collection at "$coll_path/$LOCAL_COLLECTION"
     fi
 }
 
@@ -96,7 +143,7 @@ refresh_test_container() {
         # shellcheck disable=SC2128
         created=$(date --date="$BASH_REMATCH" +%s)
     else
-        echo ERROR: invalid date format: "$created"
+        error invalid date format: "$created"
         return 1
     fi
 
@@ -122,10 +169,12 @@ refresh_test_container() {
             container_id=$(podman run -d $CONTAINER_OPTS ${LSR_CONTAINER_OPTS:-} \
                 $CONTAINER_MOUNTS "$image_name" sleep 3600)
             if [ -z "$container_id" ]; then
-                echo ERROR: Failed to start container
+                error Failed to start container
                 return 1
             fi
+            sleep 1  # ensure container is running
             if ! podman exec -i "$container_id" "$pkgcmd" install -y $initpkgs; then
+                podman inspect "$container_id"
                 podman rm -f "$container_id"
                 return 1
             fi
@@ -139,32 +188,38 @@ refresh_test_container() {
         container_id=$(podman run -d $CONTAINER_OPTS ${LSR_CONTAINER_OPTS:-} \
             $CONTAINER_MOUNTS "$image_name" "$CONTAINER_ENTRYPOINT")
         if [ -z "$container_id" ]; then
-            echo ERROR: Failed to start container
+            error Failed to start container
             return 1
         fi
+        sleep 1  # ensure container is running
+        inv_file="$(mktemp)"
+        echo "sut ansible_host=$container_id ansible_connection=podman" > "$inv_file"
         # shellcheck disable=SC2064
-        trap "podman rm -f $container_id" RETURN
+        trap "podman rm -f $container_id; rm -f $inv_file" RETURN
         if [ -n "${prepkgs:-}" ]; then
             if ! podman exec -i "$container_id" "$pkgcmd" install -y $prepkgs; then
+                podman inspect "$container_id"
                 return 1
             fi
         fi
-        if [ -n "${setup_yml:-}" ] && [ -f "${setup_yml}" ]; then
-            if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -c podman -i "$container_id", \
+        if [ -n "${setup_yml:-}" ] && [ -f "${setup_yml}" ] && [ -s "${setup_yml}" ]; then
+            if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
                 "$setup_yml"; then
                 return 1
             fi
         fi
         if ! podman exec -i "$container_id" "$pkgcmd" upgrade -y; then
+            podman inspect "$container_id"
             return 1
         fi
         COMMON_PKGS="sudo procps-ng systemd-udev device-mapper openssh-server \
-            openssh-clients"
+            openssh-clients iproute"
         if ! podman exec -i "$container_id" "$pkgcmd" install -y $COMMON_PKGS; then
+            podman inspect "$container_id"
             return 1
         fi
         if [ -f "${CONTAINER_TESTS_PATH}/setup-snapshot.yml" ]; then
-            if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -c podman -i "$container_id", \
+            if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
                 "${CONTAINER_TESTS_PATH}/setup-snapshot.yml"; then
                 return 1
             fi
@@ -176,7 +231,148 @@ refresh_test_container() {
     return 0
 }
 
+setup_vault() {
+    local test_dir test_basename no_vault_vars vault_pwd_file vault_vars_file
+    test_dir="$1"
+    test_basename="$2"
+    vault_pwd_file="$test_dir/vault_pwd"
+    vault_vars_file="$test_dir/vars/vault-variables.yml"
+    no_vault_vars="$test_dir/no-vault-variables.txt"
+    if [ -f "$vault_pwd_file" ] && [ -f "$vault_vars_file" ]; then
+        export ANSIBLE_VAULT_PASSWORD_FILE="$vault_pwd_file"
+        vault_args="--extra-vars=@$vault_vars_file"
+        if [ -f "$no_vault_vars" ] && grep -q "^${test_basename}$" "$no_vault_vars"; then
+            unset ANSIBLE_VAULT_PASSWORD_FILE
+            vault_args=""
+        fi
+    else
+        unset ANSIBLE_VAULT_PASSWORD_FILE
+        vault_args=""
+    fi
+}
+
+run_playbooks() {
+    # shellcheck disable=SC2086
+    local test_pb_base test_dir pb
+    declare -a test_pb=()
+    test_pb_base="$1"; shift
+    for pb in "$@"; do
+        pb="$(realpath "$pb")"
+        test_pb+=("$pb")
+        if [ -z "${test_dir:-}" ]; then
+            test_dir="$(dirname "$pb")"
+        fi
+    done
+
+    container_id=$(podman run -d $CONTAINER_OPTS --name "$test_pb_base" \
+        ${LSR_CONTAINER_OPTS:-} $CONTAINER_MOUNTS "$CONTAINER_IMAGE" \
+        "$CONTAINER_ENTRYPOINT")
+
+    if [ -z "$container_id" ]; then
+        error Failed to start container
+        exit 1
+    fi
+
+    inv_file="$(mktemp)"
+    if [ -z "${LSR_DEBUG:-}" ]; then
+        trap "rm -rf $inv_file; podman rm -f $container_id" RETURN EXIT
+    fi
+    sleep 1  # give the container a chance to start up
+    if ! podman exec -i "$container_id" /bin/bash -euxo pipefail -c '
+        limit=60
+        for ii in $(seq 1 $limit); do
+            if systemctl is-active dbus; then
+                break
+            fi
+            sleep 1
+        done
+        if [ $ii = $limit ]; then
+            systemctl status dbus
+            exit 1
+        fi
+        sysctl -w net.ipv6.conf.all.disable_ipv6=0
+        systemctl unmask systemd-udevd
+        if ! systemctl start systemd-udevd; then
+            systemctl status systemd-udevd
+            exit 1
+        fi
+        for ii in $(seq 1 $limit); do
+            if systemctl is-active systemd-udevd; then
+                break
+            fi
+            sleep 1
+        done
+        if [ $ii = $limit ]; then
+            systemctl status systemd-udevd
+            exit 1
+        fi
+    '; then
+        podman inspect "$container_id"
+        return 1
+    fi
+
+    echo "sut ansible_host=$container_id ansible_connection=podman" > "$inv_file"
+    setup_vault "$test_dir" "${test_pb_base}.yml"
+    # shellcheck disable=SC2086
+    pushd "$test_dir" > /dev/null
+    ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" ${vault_args:-} \
+        -e ansible_playbook_filepath="$(type -p ansible-playbook)" "${test_pb[@]}"
+    popd > /dev/null
+}
+
+# grr - ubuntu 20.04 bash wait does not support -p pid :-(
+# also - you cannot call this function in a subshell or it
+# defeats the purpose of finding child jobs
+# PID is a global variable
+lsr_wait() {
+    local rc found
+    while true; do
+        rc=0
+        wait -nf || rc=$?
+        # now, figure out which pid just exited, if any
+        # it might not be one of our playbook jobs that exited
+        found=0
+        for PID in "${!cur_jobs[@]}"; do
+            test -d "/proc/$PID" || { found=1; break; }
+        done
+        if [ "$found" = 0 ]; then
+            sleep 1
+        else
+            break
+        fi
+    done
+    return "$rc"
+}
+
+# PID is a global variable
+wait_for_results() {
+    local rc test_pb_base
+    rc=0
+    info waiting for results - pids "${!cur_jobs[*]}" tests "${cur_jobs[*]}"
+    for mypid in ${!cur_jobs[*]}; do
+        test -d "/proc/$mypid" || echo "$mypid" is not running
+    done
+    # wait -p pid -n || rc=$?
+    lsr_wait || rc=$?
+    test_pb_base="${cur_jobs[$PID]}"
+    results["$test_pb_base"]="$rc"
+    unset cur_jobs["$PID"]
+    if [ "$rc" = 0 ]; then
+        info Test "$test_pb_base" SUCCESS
+    else
+        error Test "$test_pb_base" FAILED
+    fi
+    rc=0
+    podman wait "$test_pb_base" > /dev/null 2>&1 || rc=$?
+    # 125 is no such container - ok
+    if [ "$rc" != 0 ] && [ "$rc" != 125 ]; then
+        error container "$test_pb_base" in invalid wait state: "$rc"
+    fi
+}
+
 ERASE_OLD_SNAPSHOT=false
+PARALLEL=0
+FAIL_FAST=true
 while [ -n "${1:-}" ]; do
     key="$1"
     case "$key" in
@@ -185,9 +381,18 @@ while [ -n "${1:-}" ]; do
             CONTAINER_IMAGE_NAME="$1" ;;
         --config)
             shift
-            CONFIG="$1" ;;
+            CONTAINER_CONFIG="$1" ;;
         --erase-old-snapshot)
             ERASE_OLD_SNAPSHOT=true ;;
+        --parallel)
+            shift
+            PARALLEL="$1" ;;
+        --fail-fast)
+            shift
+            FAIL_FAST="$1" ;;
+        --log-dir)
+            shift
+            LOG_DIR="$1" ;;
         --*) # unknown option
             echo "Unknown option $1"
             exit 1 ;;
@@ -197,18 +402,20 @@ while [ -n "${1:-}" ]; do
     shift
 done
 
-CONTAINER_BASE_IMAGE=$(jq -r '.images[] | select(.name == "'"$CONTAINER_IMAGE_NAME"'") | .container' "$CONFIG")
+CONTAINER_BASE_IMAGE=$(jq -r '.images[] | select(.name == "'"$CONTAINER_IMAGE_NAME"'") | .container' "$CONTAINER_CONFIG")
 if [ "${CONTAINER_BASE_IMAGE:-null}" = null ] ; then
-    echo ERROR: container named "$CONTAINER_IMAGE_NAME" not found in "$CONFIG"
+    error container named "$CONTAINER_IMAGE_NAME" not found in "$CONTAINER_CONFIG"
     exit 1
 fi
 CONTAINER_IMAGE=${CONTAINER_IMAGE:-"lsr-test-$CONTAINER_IMAGE_NAME:latest"}
 setup_json=$(mktemp --suffix _setup.json)
 setup_yml=$(mktemp --suffix _setup.yml)
-jq -r '.images[] | select(.name == "'"$CONTAINER_IMAGE_NAME"'") | .setup' "$CONFIG" > "$setup_json"
+jq -r '.images[] | select(.name == "'"$CONTAINER_IMAGE_NAME"'") | .setup' "$CONTAINER_CONFIG" > "$setup_json"
 python -c '
 import json, yaml, sys
 val = json.load(open(sys.argv[1]))
+if not val:
+  sys.exit(0)
 yaml.safe_dump(val, open(sys.argv[2], "w"))
 ' "$setup_json" "$setup_yml"
 rm -f "$setup_json"
@@ -219,59 +426,67 @@ if [ -z "${CONTAINER_ENTRYPOINT:-}" ]; then
     esac
 fi
 
+echo ::group::install collection requirements
 install_requirements
+echo ::endgroup::
+echo ::group::install and configure plugins used by tests
 setup_plugins
+echo ::endgroup::
+echo ::group::setup and prepare test container
 if ! refresh_test_container "$ERASE_OLD_SNAPSHOT" "$setup_yml"; then
     rm -f "$setup_yml"
     exit 1
 fi
+echo ::endgroup::
 rm -f "$setup_yml"
 
-export TEST_ARTIFACTS="${TEST_ARTIFACTS:-artifacts}"
-
-# shellcheck disable=SC2086
-CONTAINER_ID=$(podman run -d $CONTAINER_OPTS ${LSR_CONTAINER_OPTS:-} \
-    $CONTAINER_MOUNTS "$CONTAINER_IMAGE" "$CONTAINER_ENTRYPOINT")
-
-if [ -z "$CONTAINER_ID" ]; then
-    echo ERROR: Failed to start container
-    exit 1
+declare -A cur_jobs=()
+declare -A log_files=()
+declare -A results=()
+declare -A test_pb=()
+if [ "$PARALLEL" -gt 1 ]; then
+    while [ -n "${1:-}" ]; do
+        if [ "${#cur_jobs[*]}" -lt "$PARALLEL" ]; then
+            orig_test_pb="$1"; shift
+            test_pb="$(realpath "$orig_test_pb")"
+            test_pb_base="$(basename "$test_pb" .yml)"
+            log_dir="${LOG_DIR:-$(dirname "$test_pb")}"
+            log_file="${test_pb_base}.log"
+            if [ ! -d "$log_dir" ]; then
+                mkdir -p "$log_dir"
+            fi
+            run_playbooks "$test_pb_base" "$test_pb" > "$log_dir/$log_file" 2>&1 &
+            cur_jobs["$!"]="$test_pb_base"
+            log_files["$test_pb_base"]="$log_dir/$log_file"
+            test_pb["$test_pb_base"]="$orig_test_pb"
+            info Starting test "$test_pb_base"
+        else
+            wait_for_results
+        fi
+    done
+    info All tests executed, waiting for results "${cur_jobs[*]}"
+    while [ "${#cur_jobs[*]}" -gt 0 ]; do
+        wait_for_results
+    done
+else
+    test_pb_base="$(basename "$1" .yml)"
+    run_playbooks "$test_pb_base" "$@"
 fi
 
-clean_up() {
-    podman rm -f "$CONTAINER_ID" || true
-}
-
-if [ -z "${DEBUG:-}" ]; then
-    trap clean_up EXIT
+exit_code=0
+for test_pb_base in "${!results[@]}"; do
+    rc="${results[$test_pb_base]}"
+    log="${log_files[$test_pb_base]}"
+    orig_test_pb="${test_pb[$test_pb_base]}"
+    if [ "$rc" != 0 ]; then
+        exit_code="$rc"
+        error "file=${orig_test_pb}::Test" "$test_pb_base FAILED"
+    else
+        info "file=${orig_test_pb}::Test" "$test_pb_base PASSED"
+    fi
+done
+if [ "$PARALLEL" -gt 1 ]; then
+    tar cfz logs.tar.gz "${log_files[@]}"
 fi
 
-podman exec -i "$CONTAINER_ID" /bin/bash -euxo pipefail -c '
-    limit=30
-    for ii in $(seq 1 $limit); do
-        if systemctl is-active dbus; then
-            break
-        fi
-        sleep 1
-    done
-    if [ $ii = $limit ]; then
-        systemctl status dbus
-        exit 1
-    fi
-    sysctl -w net.ipv6.conf.all.disable_ipv6=0
-    systemctl unmask systemd-udevd
-    systemctl start systemd-udevd
-    for ii in $(seq 1 $limit); do
-        if systemctl is-active systemd-udevd; then
-            break
-        fi
-        sleep 1
-    done
-    if [ $ii = $limit ]; then
-        systemctl status systemd-udevd
-        exit 1
-    fi
-'
-
-# shellcheck disable=SC2086
-ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -c podman -i "$CONTAINER_ID", "$@"
+exit "$exit_code"

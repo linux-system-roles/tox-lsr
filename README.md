@@ -391,7 +391,7 @@ arguments you provide.  Note that you must use `--` on the command line after
 the `-e qemu` or `-e qemu-ansible-core-2.x` so that `tox` will not attempt to
 interpret these as `tox` arguments:
 ```
-tox -e qemu -- --image-name fedora-34 ...
+tox -e qemu -- --image-name fedora-36 ...
 ```
 You must provide one of `--image-file` or `--image-name`.
 
@@ -400,7 +400,7 @@ You must provide one of `--image-file` or `--image-name`.
   corresponding environment variable is `LSR_QEMU_IMAGE_FILE`.
 * `--image-name` - assuming you have a config file (`--config`) that maps the
   given image name to an image url and optional setup, you can just specify an
-  image name like `--image-name fedora-34` and the script will download the
+  image name like `--image-name fedora-36` and the script will download the
   latest qcow2 compose image for Fedora 34 to a local cache (`--cache`).  The
   script will check to see if the downloaded image in the cache is the latest,
   and will not download if not needed.  In the config file you can specify
@@ -452,7 +452,7 @@ You must provide one of `--image-file` or `--image-name`.
   the backing file.  This is useful when you want to pre-load a image for testing
   multiple test runs, but do not want to alter the original downloaded image e.g.
   pre-configuring package repos, pre-installing packages, etc.  This will create
-  a file called `$IMAGE_PATH.snap` e.g. `~/.cache/linux-system-roles/fedora-34.qcow2.snap`.
+  a file called `$IMAGE_PATH.snap` e.g. `~/.cache/linux-system-roles/fedora-36.qcow2.snap`.
   The default is `false`.  The corresponding environment variable is
   `LSR_QEMU_USE_SNAPSHOT`.
 * `--wait-on-qemu` - This tells the script to wait for qemu to fully exit after
@@ -514,19 +514,19 @@ Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
 and playbooks, separate them with a `--` on the command line:
 ```
-tox -e qemu -- --image-name fedora-34 --become --become-user root -- tests_default.yml
+tox -e qemu -- --image-name fedora-36 --become --become-user root -- tests_default.yml
 ```
 This is because `runqemu` cannot tell the difference between an Ansible argument
 and a playbook.  If you do not have any ansible-playbook arguments, only
 playbooks, you can omit the `--`:
 ```
-tox -e qemu -- --image-name fedora-34 tests_default.yml
+tox -e qemu -- --image-name fedora-36 tests_default.yml
 ```
 If using `--collection`, it is assumed you used `tox -e collection` first.  Then
 specify the path to the test playbook inside this collection:
 ```
 tox -e collection
-tox -e qemu -- --image-name fedora-34 --collection .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
+tox -e qemu -- --image-name fedora-36 --collection .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
 ```
 
 The config file looks like this:
@@ -534,8 +534,8 @@ The config file looks like this:
 {
     "images": [
     {
-      "name": "fedora-34",
-      "compose": "https://kojipkgs.fedoraproject.org/compose/cloud/latest-Fedora-Cloud-34/compose/",
+      "name": "fedora-36",
+      "compose": "https://kojipkgs.fedoraproject.org/compose/cloud/latest-Fedora-Cloud-36/compose/",
       "setup": [
         {
           "name": "Enable HA repos",
@@ -556,9 +556,9 @@ The config file looks like this:
 
 Example:
 ```
-tox -e qemu -- --image-name fedora-34 tests/tests_default.yml
+tox -e qemu -- --image-name fedora-36 tests/tests_default.yml
 ```
-This will lookup `fedora-34` in your `~/.config/linux-system-roles.json`, will
+This will lookup `fedora-36` in your `~/.config/linux-system-roles.json`, will
 check if it needs to download a new image to `~/.cache/linux-system-roles`, will
 create a setup playbook based on the `"setup"` section in the config, and will
 run `ansible-playbook` with `standard-inventory-qcow2` as the inventory script
@@ -705,3 +705,135 @@ python runqemu.py --config=NONE --cache=/path/to/cache_dir \
 Older versions of `runqemu.py` would examine the `--image-name` or
 `--image-file` value to determine if the image is an EL6 image, but this is now
 deprecated. You must specify `--ssh-el6` if you need it.
+
+### Container testing
+
+Integration tests can be run using containers.  `tox` will start one or
+more containers for the managed nodes using `podman` and the Ansible `podman` connection
+plugin.  There are some test envs that can be used to run these
+tests:
+* `container-ansible-2.9` - tests against Ansible 2.9
+  * also uses jinja 2.7 if supported by the python used
+* `container-ansible-core-2.x` - tests against ansible-core 2.x
+
+These tests run in one of two modes, depending on which of the following
+arguments you provide.  Note that you must use `--` on the command line after
+the `-e container-ansible-2.9` or `-e container-ansible-core-2.x` so that `tox` will not attempt to
+interpret these as `tox` arguments:
+```
+tox -e container-ansible-core-2.15 -- --image-name fedora-36 ...
+```
+You must provide `--image-name`.
+
+* `--image-name` - assuming you have a config file (`--config`) that maps the
+  given image name to a container registry image and optional setup, you can just specify an
+  image name like `--image-name fedora-38` and the script will pull the
+  latest image for Fedora 38.  In the config file you can specify
+  additional setup steps to be run e.g. setting up additional dnf/yum repos.
+  The corresponding environment variable is `CONTAINER_IMAGE_NAME`.
+* `--config` - default `$HOME/.config/linux-system-roles.json` - this is the
+  full path to a config file that lists the image names, the source or compose,
+  and additional setup steps.  The corresponding environment variable is
+  `CONTAINER_CONFIG`.
+* `--erase-old-snapshot` - If given, erase the current snapshot.  If not specified
+  `tox` will use the current snapshot if it is less than
+  `CONTAINER_AGE` hours old (default: 24)
+* `--parallel N` - N is an integer which is the number of containers to run in
+  parallel.  See below.  The default is `0` which means playbooks will be run
+  sequentially.
+* `--log-dir PATH` - When using `--parallel` - for each test playbook named `TESTNAME.yml`
+  the log will be written to a file named `TESTNAME.log` in the `PATH` directory.
+  The default is the directory where `TESTNAME.yml` is found.
+* `--fail-fast true|false` - default `false`, which means all of the tests will be run
+  and continue through failures - if `true`, the tests will stop running when the first
+  error is hit.  This only applies if you specify multiple playbooks.
+Each additional command line argument is passed through to ansible-playbook, so
+it must either be an argument or a playbook.  If you want to pass both arguments
+and playbooks, separate them with a `--` on the command line:
+```
+tox -e container-ansible-core-2.15 -- --image-name fedora-38 --become --become-user root -- tests_default.yml
+```
+This is because `tox` cannot tell the difference between an Ansible argument
+and a playbook.  If you do not have any ansible-playbook arguments, only
+playbooks, you can omit the `--`:
+```
+tox -e container-ansible-core-2.15 -- --image-name fedora-38 tests_default.yml
+```
+If you want to test a collection, you must use `tox -e collection` first.  Then
+specify the path to the test playbook inside this collection:
+```
+tox -e collection
+tox -e container-ansible-core-2.15 -- --image-name fedora-38 .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
+```
+
+The config file looks like this:
+```
+{
+    "images": [
+    {
+      "name": "centos-9",
+      "centoshtml": "https://cloud.centos.org/centos/9-stream/x86_64/images",
+      "container": "quay.io/centos/centos:stream9",
+      "setup": [
+        {
+          "name": "Enable HA repos",
+          "hosts": "all",
+          "gather_facts": false,
+          "tasks": [
+            { "name": "Enable HA repos",
+              "command": "dnf config-manager --set-enabled highavailability"
+            }
+          ]
+        }
+      ]
+    },
+    ...
+}
+```
+
+Example:
+```
+tox -e container-ansible-core-2.15 -- --image-name centos-9 tests/tests_default.yml
+```
+This will lookup `centos-9` in your `~/.config/linux-system-roles.json`, check
+if the local snapshot is more than `CONTAINER_AGE` hours old, if so will
+`podman pull` the `"container"` value, will create a local snapshot container of
+this, will create a setup playbook based on the `"setup"` section in the config,
+will save the snapshot and will run `ansible-playbook` with `-c podman` using
+the local snapshot with `tests/tests_default.yml`.
+
+The environment variables are useful for customizing in your local tox.ini.  For
+example, if I want to use a custom location for my config, and I do not
+want to use the profile_tasks plugin, I can do this:
+```
+[container_common]
+setenv =
+    LSR_QEMU_CONFIG = /home/username/myconfig.json
+    LSR_QEMU_PROFILE = false
+```
+
+#### Parallel containers
+
+By default, if you specify multiple playbooks, each one will be run sequentially
+in the same container by the same `ansible-playbook` command e.g.
+`ansible-playbook -c podman test1.yml ... testN.yml`. If you use `--parallel M`
+with `M > 1` then `tox` will run each playbook separately in separate containers
+e.g.
+```
+{ podman run -d ...; ansible-playbook -c podman test1.yml; } &
+{ podman run -d ...; ansible-playbook -c podman test2.yml; } &
+...
+{ podman run -d ...; ansible-playbook -c podman testN.yml; } &
+
+```
+The number `M` controls how many `podman` containers are running at a time.
+There seems to be a limitation on the number of containers that can be run at
+the same time.  For example, if there are 10 test playbooks, and you use
+`--parallel 3`, then `tox` will run `3` containers at the same time.  As soon as
+one completes, it will start another one, until there are `3` running, or there
+are no more playbooks to run.
+
+NOTE: There seems to be a limitation on the number of containers that can be run
+in parallel.  In testing on my Fedora 36 laptop with 8 processors and lots of
+RAM, I can only run `3` at a time - using `4` will cause the containers to fail
+with `dbus` errors - not sure what the issue is.
