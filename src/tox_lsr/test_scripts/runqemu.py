@@ -919,7 +919,7 @@ def run_ansible_playbooks(  # noqa: C901
 
 def install_requirements(sourcedir, collection_path, test_env, collection):
     """
-    Install reqs from meta/collection-requirements.yml, if any.
+    Install reqs from {meta,tests}/collection-requirements.yml, if any.
 
     Also look for legacy meta/requirements.yml - should only be used
     for roles, but we have been incorrectly using it for collections.
@@ -950,21 +950,21 @@ def install_requirements(sourcedir, collection_path, test_env, collection):
                 ]
             )
             force_flag = "--force"
-    legacy_rqf = "requirements.yml"
-    coll_rqf = "collection-requirements.yml"
-    for rqf in [legacy_rqf, coll_rqf]:
-        reqfile = os.path.join(sourcedir, "meta", rqf)
+    legacy_rqf = os.path.join(sourcedir, "meta", "requirements.yml")
+    coll_rqf = os.path.join(sourcedir, "meta", "collection-requirements.yml")
+    tests_rqf = os.path.join(sourcedir, "tests", "collection-requirements.yml")
+    for reqfile in [legacy_rqf, coll_rqf, tests_rqf]:
         # see if reqfile is in legacy role format
         if os.path.isfile(reqfile):
-            if rqf == legacy_rqf:
+            if reqfile == legacy_rqf:
                 with open(reqfile) as rqff:
                     obj = yaml.safe_load(rqff)
                     if isinstance(obj, list):
                         continue  # legacy role format
                     logging.warning(
                         "Using %s - please convert to %s instead",
-                        rqf,
-                        coll_rqf,
+                        os.path.basename(reqfile),
+                        os.path.basename(coll_rqf),
                     )
             ag_cmd = [
                 "ansible-galaxy",
