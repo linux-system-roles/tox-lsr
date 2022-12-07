@@ -49,9 +49,6 @@ The following is an example of a `tox.ini` from the kernel_settings role:
 lsr_enable = true
 commands_pre = bash -c '{toxinidir}/tests/install_tuned_for_testing.sh || {toxinidir}/tests/kernel_settings/install_tuned_for_testing.sh'
 
-[lsr_ansible-lint]
-configfile = {toxinidir}/.ansible-lint
-
 [lsr_yamllint]
 configfile = {toxinidir}/.yamllint.yml
 configbasename = .yamllint.yml
@@ -321,10 +318,6 @@ environment variables:
 * `RUN_YAMLLINT_CONFIG_FILE` - path to config file to use instead of the default
 * `LSR_ANSIBLE_TEST_DOCKER` - if set to `true`, `ansible-test` will be run with
   `--docker`
-* `LSR_ANSIBLE_LINT_DEP` - this is the dep to pass when doing the pip install of
-  ansible for ansible-lint.  The default is `ansible-core==2.12.*`.
-* `LSR_ANSIBLE_LINT_VER` - this is the version of ansible-lint to install for
-  the ansible-lint testenv.  The default is `5.2.0`.
 * `LSR_ANSIBLE_TEST_DEP` - this is the dep to pass when doing the pip install of
   ansible for ansible-test.  The default is `ansible-core==2.12.*`.
 * `LSR_PYLINT_ANSIBLE_DEP` - this is the dep to pass when doing the pip install of
