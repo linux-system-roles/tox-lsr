@@ -1,0 +1,35 @@
+ignore_files:
+  - .tox
+  - .github
+  - .sanity-ansible-ignore-*.txt
+  - pylintrc
+
+rules:
+  - name: master
+    terms:
+      - master
+    alternatives:
+      - primary
+
+  - name: slave
+    terms:
+      - slave
+    alternatives:
+      - secondary
+
+  - name: sanity
+    terms:
+      - sanity
+    alternatives:
+      - confidence
+      - quick check
+      - coherence check
+    severity: warning
+
+  - name: dummy
+    terms:
+      - dummy
+    alternatives:
+      - placeholder
+      - sample
+    severity: warning
