@@ -3,6 +3,8 @@ ignore_files:
   - .github
   - .sanity-ansible-ignore-*.txt
   - pylintrc
+  - vendor
+  - tests/sanity
 
 rules:
   - name: master
@@ -10,12 +12,42 @@ rules:
       - master
     alternatives:
       - primary
+      - source
+      - initiator,requester
+      - controller,host
+      - director
+    severity: warning
 
   - name: slave
     terms:
       - slave
     alternatives:
       - secondary
+      - replica
+      - responder
+      - device,worker,proxy
+      - performer
+    severity: error
+
+  - name: whitelist
+    terms:
+      - whitelist
+      - white-list
+      - whitelisted
+      - white-listed
+    alternatives:
+      - allowlist
+    severity: error
+
+  - name: blacklist
+    terms:
+      - blacklist
+      - black-list
+      - blacklisted
+      - black-listed
+    alternatives:
+      - blocklist
+    severity: error
 
   - name: sanity
     terms:
