@@ -16,8 +16,10 @@ WOKE_OUT="$LSR_TOX_ENV_DIR/tmp/woke_output.txt"
 
 "$WOKE_CMD" -c "$LSR_CONFIGDIR/woke.yml" > "$WOKE_OUT" 2>&1 || :
 
-if grep 'instead (error)' "$WOKE_OUT" 2>&1 /dev/null ; then
+if grep 'instead (' "$WOKE_OUT" 2>&1 /dev/null ; then
   cat "$WOKE_OUT"
-  lsr_error "${ME}: Conscious language violation was reported."
+  if grep 'instead (error)' "$WOKE_OUT" 2>&1 /dev/null ; then
+    lsr_error "${ME}: Conscious language violation was reported."
+  fi
 fi
 exit 0
