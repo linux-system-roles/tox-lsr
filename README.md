@@ -247,9 +247,8 @@ Then doing `tox -e flake8` would use your flake8.conf.
 
 ### Using setenv and environment variables
 
-These environment variables can be set in your local tox.ini `testenv` section,
-or in your CI configuration e.g. `.github/workflows/tox.yml`.  Some of the
-environment variables we used in the old scripts are carried over:
+These environment variables can be set in your local tox.ini `testenv` section.
+Some of the environment variables we used in the old scripts are carried over:
 * `RUN_PYTEST_SETUP_MODULE_UTILS` - if set to an arbitrary non-empty value, the
   environment will be configured so that tests of the `module_utils/` code will be
   run correctly
@@ -262,22 +261,6 @@ environment variables we used in the old scripts are carried over:
   `--ignore=some,errs`
 * `RUN_BLACK_EXTRA_ARGS` - any extra command line arguments to provide e.g.
   `--ignore=some,errs`
-* `LSR_EXTRA_PACKAGES` - set in `.github/workflows/tox.yml` - list of extra
-  packages to install in the CI environment (typically an Ubuntu variant)
-* `LSR_ANSIBLES` - set in `.github/workflows/tox.yml` - ansible versions to test
-  molecule against in the form that is used with pip e.g. use
-  `LSR_ANSIBLES='ansible==2.8.* ansible==2.9.*'` to use ansible 2.8 and ansible
-  2.9.  Only ansible 2.8 and higher are supported. tox-lsr 2.0 uses molecule v3,
-  which does not work with ansible 2.7 or earlier.
-* `LSR_MSCENARIOS` - set in `.github/workflows/tox.yml` - molecule scenarios to
-  test
-* `LSR_MOLECULE_DRIVER` - default `docker` - The molecule driver to use.  If you
-  want to use `podman`, use `LSR_MOLECULE_DRIVER=podman`
-* `LSR_MOLECULE_DRIVER_VERSION` - default empty - use this if you want to
-  override the version of the molecule driver pypi package - otherwise, the
-  correct version will be auto-detected.  E.g.
-  `LSR_MOLECULE_DRIVER=podman LSR_MOLECULE_DRIVER_VERSION='<4.4'` will evaluate
-  to something like `pip install podman<4.4`
 * `LSR_PUBLISH_COVERAGE` - If the variable is unset or empty (the default), no
   coverage is published.  Other valid values for the variable are:
     * `strict` - the reporting is performed in strict mode, so situations like
@@ -324,6 +307,25 @@ environment variables:
   ansible for pylint.  The default is `ansible-core==2.12.*`.
 * `LSR_RUN_TEST_DIR` - this is the directory to use to override `changedir`, for
   those tests that need it, primarily the tests run "recursively" via `-e collection`
+* `LSR_CONTAINER_RUNTIME` - default `podman` - set to `docker` if you must
+
+These environment variables are deprecated and will be removed soon:
+* `LSR_EXTRA_PACKAGES` - set in `.github/workflows/tox.yml` - list of extra
+  packages to install in the CI environment (typically an Ubuntu variant)
+* `LSR_ANSIBLES` - set in `.github/workflows/tox.yml` - ansible versions to test
+  molecule against in the form that is used with pip e.g. use
+  `LSR_ANSIBLES='ansible==2.8.* ansible==2.9.*'` to use ansible 2.8 and ansible
+  2.9.  Only ansible 2.8 and higher are supported. tox-lsr 2.0 uses molecule v3,
+  which does not work with ansible 2.7 or earlier.
+* `LSR_MSCENARIOS` - set in `.github/workflows/tox.yml` - molecule scenarios to
+  test
+* `LSR_MOLECULE_DRIVER` - default `docker` - The molecule driver to use.  If you
+  want to use `podman`, use `LSR_MOLECULE_DRIVER=podman`
+* `LSR_MOLECULE_DRIVER_VERSION` - default empty - use this if you want to
+  override the version of the molecule driver pypi package - otherwise, the
+  correct version will be auto-detected.  E.g.
+  `LSR_MOLECULE_DRIVER=podman LSR_MOLECULE_DRIVER_VERSION='<4.4'` will evaluate
+  to something like `pip install podman<4.4`
 
 These environment variables have been removed:
 * `RUN_PYLINT_INCLUDE` - use `RUN_PYLINT_EXTRA_ARGS`
