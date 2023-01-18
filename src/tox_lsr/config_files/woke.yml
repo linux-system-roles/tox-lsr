@@ -5,6 +5,7 @@ ignore_files:
   - pylintrc
   - vendor
   - tests/sanity
+  - templates/*master*
 
 rules:
   - name: master
