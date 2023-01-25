@@ -13,7 +13,10 @@ SCRIPTDIR=$(readlink -f "$(dirname "$0")")
 # Run codeql against python codes in a role
 CODEQLACTIONDIR=${CODEQLACTIONDIR:-"${HOME}/github.com/github/codeql-action"}
 ROLE=${ROLE:-"$( basename $TOPDIR )"}
-WORKDIR=$( mktemp -d /var/tmp/CODEQL_DB_${ROLE}_XXX )
+JQPATH=$( which jq 2> /dev/null )
+if [ $? -ne 0 ]; then
+    lsr_error "${ME}: jq is missing. Please install the package."
+fi
 
 # Go to the TOPDIR
 cd "$TOPDIR"
@@ -22,32 +25,30 @@ cd "$TOPDIR"
 # https://docs.github.com/en/code-security/code-scanning/using-codeql-code-scanning-with-your-existing-ci-system/installing-codeql-cli-in-your-ci-system
 CODEQLTARBALL=codeql-bundle-linux64.tar.gz
 CODEQLURL=https://github.com/github/codeql-action/releases/latest/download/$CODEQLTARBALL
-CODEQLPATH=$( which codeql 2> /dev/null )
-if [ $? -ne 0 ]; then
-    wget "$CODEQLURL"
-    tar -xzf ./"$CODEQLTARBALL"
-    # Set $( pwd )/codeql to PATH
-    PATH=$( pwd )/codeql:$PATH
-else
-    # Set parentdir of $CODEQLPATH to PATH
-    PATH=$( dirname "$CODEQLPATH" ):$PATH
+if [ ! -f "$LSR_TOX_ENV_TMP_DIR/$CODEQLTARBALL" ]; then
+    curl -L -o "$LSR_TOX_ENV_TMP_DIR/$CODEQLTARBALL"  "$CODEQLURL"
 fi
+if [ ! -d "$LSR_TOX_ENV_TMP_DIR/codeql" ]; then
+    tar xfz "$LSR_TOX_ENV_TMP_DIR/$CODEQLTARBALL" -C "$LSR_TOX_ENV_TMP_DIR"
+fi
+# codeql/codeql is a shell script which launches java, which  requires all the files in the 
+PATH="$LSR_TOX_ENV_TMP_DIR/codeql":"$PATH"
 
 # Checkout codeql-action
-GITHUBDIR="${HOME}/github.com/github"
-CODEQLACTIONDIR=${CODEQLACTIONDIR:-"${GITHUBDIR}/codeql-action"}
-if [ ! -d $CODEQLACTIONDIR ]; then
-    if [ ! -d $GITHUBDIR ]; then
-        mkdir -p $GITHUBDIR
-    fi
-    (cd $GITHUBDIR; gh repo clone github/codeql-action)
+CODEQLACTIONDIR="$LSR_TOX_ENV_DIR/codeql-action"
+if [ ! -d "$CODEQLACTIONDIR" ]; then
+    git clone https://github.com/github/codeql-action "$CODEQLACTIONDIR"
 fi
 
 # Create a database dir:
-DBDIR=$WORKDIR/database
-mkdir $DBDIR
-RESULTS=$WORKDIR/results
-mkdir $RESULTS
+DBDIR=$LSR_TOX_ENV_DIR/database
+if [ ! -d "$DBDIR" ]; then
+    mkdir $DBDIR
+fi
+RESULTS=$LSR_TOX_ENV_DIR/results
+if [ ! -d "$RESULTS" ]; then
+    mkdir $RESULTS
+fi
 
 # Load language configuration
 codeql resolve queries python-code-scanning.qls --format=bylanguage
@@ -62,10 +63,10 @@ codeql resolve languages --format=betterjson --extractor-options-verbosity=4
 # ERROR: Can not perform a '--user' install. User site-packages are
 # not visible in this virtualenv.
 sed -e "s/pip install --user/pip install/" \
-$CODEQLACTIONDIR/python-setup/install_tools.sh > $WORKDIR/install_tools.sh
-bash -x $WORKDIR/install_tools.sh
+$CODEQLACTIONDIR/python-setup/install_tools.sh > "$LSR_TOX_ENV_TMP_DIR/install_tools.sh"
+bash "$LSR_TOX_ENV_TMP_DIR/install_tools.sh"
 
-codeql database init --db-cluster $DBDIR --source-root=$TOPDIR \
+codeql database init --db-cluster "$DBDIR" --source-root="$TOPDIR" \
     --language=python
 
 # Setup environment variables
@@ -74,28 +75,28 @@ export CODEQL_RAM=5919
 export CODEQL_THREADS=2
 
 # Extracting python
-codeql database trace-command $DBDIR/python -- \
-    $( dirname "$CODEQLPATH" )/python/tools/autobuild.sh
+codeql database trace-command "$DBDIR/python" -- \
+    "$LSR_TOX_ENV_TMP_DIR/codeql/python/tools/autobuild.sh"
 
 # Finalizing python
-codeql database finalize --finalize-dataset --threads=$CODEQL_THREADS \
-    --ram=$CODEQL_RAM $DBDIR/python
+codeql database finalize --finalize-dataset --threads="$CODEQL_THREADS" \
+    --ram="$CODEQL_RAM" "$DBDIR/python"
 
 # Running queries for python
-codeql database run-queries --ram=$CODEQL_RAM --threads=$CODEQL_THREADS \
-    $DBDIR/python --min-disk-free=1024 \
+codeql database run-queries --ram="$CODEQL_RAM" --threads="$CODEQL_THREADS" \
+    "$DBDIR/python" --min-disk-free=1024 \
     -v python-security-and-quality.qls
 
 # Interpreting results for python
-codeql database interpret-results --threads=$CODEQL_THREADS \
+codeql database interpret-results --threads="$CODEQL_THREADS" \
     --format=sarif-latest -v --output=$RESULTS/python.sarif \
     --no-sarif-add-snippets --print-diagnostics-summary \
     --print-metrics-summary --sarif-group-rules-by-pack \
     --sarif-add-query-help --sarif-category /language:python \
-    --sarif-add-baseline-file-info $DBDIR/python \
+    --sarif-add-baseline-file-info "$DBDIR/python" \
     python-security-and-quality.qls
 
-codeql database print-baseline $DBDIR/python
+codeql database print-baseline "$DBDIR/python"
 
 echo "CodeQL result file on $ROLE: $RESULTS/python.sarif"
 
@@ -103,13 +104,13 @@ JQPATH=$( which jq 2> /dev/null )
 if [ $? -ne 0 ]; then
     echo "WARNING: please install jq package"
 else
-    rcnt=$( jq '.runs[0].results | length' $RESULTS/python.sarif )
+    rcnt=$( jq '.runs[0].results | length' "$RESULTS/python.sarif" )
 	if [ $rcnt -gt 0 ]; then
         echo "CODEQL RESULT"
-        jq '.runs[0].results' $RESULTS/python.sarif
-        lsr_error "${ME}: Found $rcnt security issues."
+        jq '.runs[0].results' "$RESULTS/python.sarif"
+        lsr_error "${ME}: Found $rcnt security and quality issue(s)."
     else
-        echo "PASS: Found no security issues."
+        echo "PASS: Found no security and quality issues."
 	fi
 fi
 exit 0
