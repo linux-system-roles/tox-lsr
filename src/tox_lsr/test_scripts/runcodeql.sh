@@ -66,6 +66,9 @@ sed -e "s/pip install --user/pip install/" \
 $CODEQLACTIONDIR/python-setup/install_tools.sh > "$LSR_TOX_ENV_TMP_DIR/install_tools.sh"
 bash "$LSR_TOX_ENV_TMP_DIR/install_tools.sh"
 
+if [ -d "$DBDIR/python" ]; then
+    rm -rf $DBDIR/*
+fi
 codeql database init --db-cluster "$DBDIR" --source-root="$TOPDIR" \
     --language=python
 
