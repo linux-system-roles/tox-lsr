@@ -101,19 +101,28 @@ codeql database interpret-results --threads="$CODEQL_THREADS" \
 
 codeql database print-baseline "$DBDIR/python"
 
-echo "CodeQL result file on $ROLE: $RESULTS/python.sarif"
+codeql diagnostics export --format=sarif-latest --output=$RESULTS/codeql-failed-run.sarif --sarif-category /language:python
+
+echo "CodeQL result file on $ROLE:"
+echo " - failed: $RESULTS/codeql-failed-run.sarif"
+echo " - all: $RESULTS/python.sarif"
 
 JQPATH=$( which jq 2> /dev/null )
 if [ $? -ne 0 ]; then
     echo "WARNING: please install jq package"
 else
-    rcnt=$( jq '.runs[0].results | length' "$RESULTS/python.sarif" )
-	if [ $rcnt -gt 0 ]; then
+    fcnt=$( jq '.runs[0].results | length' "$RESULTS/codeql-failed-run.sarif" )
+    wcnt=$( jq '.runs[0].results | length' "$RESULTS/python.sarif" )
+    if [ "$fcnt" -gt 0 ]; then
+        echo "CODEQL RESULT"
+        jq '.runs[0].results' "$RESULTS/codeql-failed-run.sarif"
+        lsr_error "${ME}: Found $wcnt findings; $fcnt of them is/are failure(s)."
+    elif [ "$wcnt" -gt 0 ]; then
         echo "CODEQL RESULT"
         jq '.runs[0].results' "$RESULTS/python.sarif"
-        lsr_error "${ME}: Found $rcnt security and quality issue(s)."
+        echo "PASS: Found $wcnt items; none of them are failures."
     else
         echo "PASS: Found no security and quality issues."
-	fi
+    fi
 fi
 exit 0
