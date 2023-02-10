@@ -18,7 +18,6 @@ import py
 
 # mocks the tox.config.Config class
 class MockConfig(object):
-
     # pylint: disable=too-many-instance-attributes
     __slots__ = (
         "_parser",
