@@ -668,3 +668,30 @@ tests_b.yml
 ```
 Then you can run `tox -e qemu-... -- tests/tests_a.yml` and the vault encrypted
 variables will not be defined.
+
+#### RHEL/CentOS-6 managed host support
+
+The native version of Python on RHEL 6 is 2.6.
+The last ansible supporting Python2 is 2.12.
+So, to execute `runqemu` against RHEL/CentOS-6 managed host,
+please specify `qemu-ansible-core-2.12` as follows.
+```
+tox -e "$ansible_core" -- --image-name rhel-6 info -- test_playbook.yml
+```
+Alternatively, following is the command line to run `runqemu.py` directly.
+This command line allows you to use python2, which is useful if `ansible 2.9`
+is installed on the control host.
+Please note that the standard-inventory-qcow2 is supposed to be a python2
+version.
+```
+python runqemu.py --config=NONE --cache=/path/to/cache_dir \
+  --inventory=/usr/share/ansible/inventory/standard-inventory-qcow2 \
+  --image-file=/path/to/cache_dir/RHEL_6_10_GA.qcow2 \
+  --setup-yml=/path/to/cache_dir/_setup.yml \
+  --artifacts=/path/to/artifacts --wait-on-qemu --log-level info \
+  -- /path/to/cache_dir/_setup.yml test_playbook.yml
+```
+`runqemu.py` examines the `--image-name` or `--image-file` value.
+If it starts with `rhel-6`, `centos-6` or `RHEL_6`, it configures
+the ssh args to connect to the older version of sshd running on
+RHEL/CentOS-6 host.

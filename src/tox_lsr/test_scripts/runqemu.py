@@ -14,8 +14,12 @@ import sys
 import tempfile
 import time
 import traceback
-import urllib.parse
-import urllib.request
+
+try:
+    import urllib.parse
+    import urllib.request
+except ImportError:
+    import urllib
 from contextlib import contextmanager
 
 import yaml
@@ -115,8 +119,12 @@ def origurl(path):
 
 def get_metadata_from_url(url, metadata_key):
     """Get metadata from given url."""
-    with urllib.request.urlopen(url) as url_response:  # nosec
-        return url_response.getheader(metadata_key)
+    try:
+        with urllib.request.urlopen(url) as url_response:  # nosec
+            return url_response.getheader(metadata_key)
+    except Exception:
+        with urllib.urlopen(url) as url_response:  # nosec
+            return url_response.getheader(metadata_key)
 
 
 def get_inventory_script(inventory):
@@ -155,7 +163,7 @@ def fetch_image(url, cache, label):
     Returns the full path to the image.
     """
 
-    original_name = os.path.basename(urllib.parse.urlparse(url).path)
+    original_name = url.split("/")[-1]
     nameroot, suffix = os.path.splitext(original_name)
     image_name = label + suffix
     path = os.path.join(cache, image_name)
@@ -510,6 +518,48 @@ def get_image_config(args):
     return image
 
 
+def prep_rhel6(args):
+    """
+    Extra treatment for rhel/centos6.
+
+    1) Create openssl_el6.conf in $HOME/.config and set OPENSSL_CONF to it.
+    2) Set the ssh extra args to ansible_args for the ansible execution
+       as well as to the environment variable TEST_EXTRA_SSH_ARGS for qemu.
+    """
+    if args.image_name:
+        image_name = args.image_name
+    else:
+        image_name = os.path.splitext(os.path.basename(args.image_file))[0]
+    if not (
+        image_name.startswith("rhel-6")
+        or image_name.startswith("centos-6")
+        or image_name.startswith("RHEL_6")
+    ):
+        return
+    # If it does not exist, create openssl_el6.conf in ~/.config.
+    dot_config = os.path.join(os.environ["HOME"], ".config")
+    if not os.path.isdir(dot_config):
+        os.makedirs(dot_config)
+    openssl_el6_conf = os.path.join(dot_config, "openssl_el6.conf")
+    os.environ["OPENSSL_CONF"] = openssl_el6_conf
+    if not os.path.exists(openssl_el6_conf):
+        s = """\
+.include /etc/pki/tls/openssl.cnf
+[openssl_init]
+alg_section = evp_properties
+[evp_properties]
+rh-allow-sha1-signatures = yes
+"""
+        with open(openssl_el6_conf, "w") as f:
+            f.write(s)
+    os.environ["TEST_EXTRA_SSH_ARGS"] = (
+        "-o KexAlgorithms=+diffie-hellman-group14-sha1 -o MACs=+hmac-sha1 "
+        "-o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa"
+    )
+    logging.info("RHEL6 - ssh args: %s", os.environ["TEST_EXTRA_SSH_ARGS"])
+    return
+
+
 def download_image(image, cache):
     """Download the image to the cache."""
     if "file" not in image:
@@ -824,7 +874,8 @@ def run_ansible_playbooks(  # noqa: C901
             test_env["ANSIBLE_LOG_PATH"] = os.path.join(
                 test_env["TEST_ARTIFACTS"], "ansible.log"
             )
-        os.makedirs(test_env["TEST_ARTIFACTS"], exist_ok=True)
+        if not os.path.isdir(test_env["TEST_ARTIFACTS"]):
+            os.makedirs(test_env["TEST_ARTIFACTS"])
 
         if args and args.log_file:
             local_log_file = os.path.abspath(args.log_file)
@@ -991,7 +1042,8 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
     callback_plugin_dir = os.path.join(
         os.environ["TOX_WORK_DIR"], "callback_plugins"
     )
-    os.makedirs(callback_plugin_dir, exist_ok=True)
+    if not os.path.isdir(callback_plugin_dir):
+        os.makedirs(callback_plugin_dir)
     debug_py = os.path.join(callback_plugin_dir, "debug.py")
     profile_py = os.path.join(callback_plugin_dir, "profile_tasks.py")
     if (pretty and not os.path.isfile(debug_py)) or (
@@ -1397,8 +1449,10 @@ def main():
         sys.exit(1)
     if args.post_snap_sleep_time == 0:
         args.post_snap_sleep_time = DEFAULT_POST_SNAP_SLEEP_TIME
-    os.makedirs(args.cache, exist_ok=True)
+    if not os.path.isdir(args.cache):
+        os.makedirs(args.cache)
 
+    prep_rhel6(args)
     image = get_image_config(args)
     runqemu(
         image,
