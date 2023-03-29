@@ -1,7 +1,7 @@
 #                                                         -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 #
-"""Tests for tox_lsr hooks."""
+"""Tests for legacy (tox 2 & 3) tox_lsr hooks."""
 
 import os
 import shutil
@@ -34,7 +34,7 @@ except ImportError:
 except AttributeError:
     from unittest import TestCase
 
-from tox_lsr.hooks import (
+from tox_lsr.hooks3 import (
     CONFIG_FILES_SUBDIR,
     LSR_CONFIG_SECTION,
     LSR_ENABLE,
