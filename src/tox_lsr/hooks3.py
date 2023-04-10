@@ -1,24 +1,11 @@
 #                                                         -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 #
-"""Install tox-lsr hooks to tox."""
+"""Install tox-lsr hooks to tox (tox 2 and 3 version)."""
 
-import os
 import traceback
-
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from io import StringIO
-
-try:
-    from ConfigParser import ConfigParser
-except ImportError:
-    from configparser import ConfigParser
-
 from tempfile import NamedTemporaryFile
-
-import pkg_resources
+from typing import TYPE_CHECKING, cast
 
 # pylint: disable=no-member,no-name-in-module,import-error
 import py.iniconfig
@@ -31,19 +18,43 @@ try:
 except ImportError:
     from tox.config import parseini as ParseIni
 
-TEST_SCRIPTS_SUBDIR = "test_scripts"
-CONFIG_FILES_SUBDIR = "config_files"
-LSR_ENABLE = "lsr_enable"
-LSR_ENABLE_ENV = "LSR_ENABLE"
-LSR_CONFIGDIR_KW = "{lsr_configdir}"
-LSR_SCRIPTDIR_KW = "{lsr_scriptdir}"
-LSR_CONFIGDIR_ENV = "LSR_CONFIGDIR"
-LSR_SCRIPTDIR_ENV = "LSR_SCRIPTDIR"
-LSR_CONFIG_SECTION = "lsr_config"
-SCRIPT_NAME = "utils.sh"  # script that must always exist
-CONFIG_NAME = "black.toml"  # config file that must always exist
-TOX_DEFAULT_INI = "tox-default.ini"  # name of default tox ini
+from .utils import (
+    add_tox_lsr_options,
+    get_lsr_configdir,
+    get_lsr_default,
+    get_lsr_scriptdir,
+    is_lsr_enabled,
+    lsr_interpolate,
+)
 
+if TYPE_CHECKING:
+    from configparser import ConfigParser
+    from io import StringIO
+    from typing import List, Mapping, MutableMapping, Tuple
+
+    # pylint: disable=too-few-public-methods
+    class CastAnyAway(object):
+        """Helper that resolves 'Any in expression' complaint."""
+
+        def get(
+            self,  # type: CastAnyAway
+            unused_name,  # type: str
+            unused_default,  # type: MutableMapping[str, object]
+        ):
+            # type: (...) -> MutableMapping[str, object]
+            """Provide correct typing information to mypy."""
+            return {}
+
+else:
+    try:
+        from cStringIO import StringIO
+    except ImportError:
+        from io import StringIO
+
+    try:
+        from ConfigParser import ConfigParser
+    except ImportError:
+        from configparser import ConfigParser
 
 # code uses some protected members such as _cfg, _parser, _reader
 # pylint: disable=protected-access
@@ -69,13 +80,18 @@ class _LSRPath(py.path.local):
     tmppath = ""
 
     def __init__(self, path, tmppath=""):
+        # type: (_LSRPath, str, str) -> None
         # pylint: disable=super-with-arguments
         super(_LSRPath, self).__init__(path)
         self.tmppath = tmppath
 
     def __str__(self):
+        # type: (_LSRPath) -> str
         if self.tmppath:
-            call_stack = traceback.extract_stack()
+            call_stack = cast(
+                "List[Tuple[str, object, str, object]]",
+                traceback.extract_stack(),
+            )
             for filename, _, func, _ in call_stack:
                 if (
                     filename.endswith("iniconfig.py")
@@ -121,7 +137,7 @@ def merge_prop_values(propname, envconf, def_envconf):
 
 
 def set_prop_values_ini(propname, def_conf, conf):
-    # type: (str, dict, dict) -> None
+    # type: (str, MutableMapping[str, str], MutableMapping[str, str]) -> None
     """If propname is one of the values we can merge, do the merge."""
 
     can_be_merged = set(["setenv", "deps", "passenv", "whitelist_externals"])
@@ -148,7 +164,11 @@ def merge_envconf(envconf, def_envconf):
         if prop_is_set(def_envconf, propname):
             if not prop_is_set(envconf, propname):
                 try:
-                    setattr(envconf, propname, getattr(def_envconf, propname))
+                    setattr(
+                        envconf,
+                        propname,
+                        cast(object, getattr(def_envconf, propname)),
+                    )
                 except AttributeError:  # some props cannot be set
                     pass
             else:
@@ -161,10 +181,16 @@ def merge_ini(config, default_config):
 
     default_ini = py.iniconfig.IniConfig("", default_config)
     for section_name, section in config._cfg.sections.items():
-        def_section = default_ini.sections.setdefault(section_name, section)
+        def_section = cast(
+            "MutableMapping[str, Mapping[str, str]]", default_ini.sections
+        ).setdefault(section_name, section)
         if def_section is not section:
             for key in section:
-                set_prop_values_ini(key, def_section, section)
+                set_prop_values_ini(
+                    key,
+                    cast("MutableMapping[str, str]", def_section),
+                    cast("MutableMapping[str, str]", section),
+                )
     # convert back to string using ConfigParser
     conf_p = ConfigParser()
     for section_name, section_data in default_ini.sections.items():
@@ -181,23 +207,29 @@ def merge_config(config, default_config):
     """Merge default_config into config."""
 
     # merge the top level config properties
-    def_tox_sec = default_config._cfg.sections["tox"]
-    tox_sec = config._cfg.sections.get("tox", {})
+    def_tox_sec = cast(
+        "MutableMapping[str, object]", default_config._cfg.sections["tox"]
+    )
+    tox_sec = cast("CastAnyAway", config._cfg.sections).get("tox", {})
     for propname in dir(default_config):
         if propname.startswith("_"):
             continue
         # set in config if not set and it's set in default
         if propname in def_tox_sec and propname not in tox_sec:
-            setattr(config, propname, getattr(default_config, propname))
+            setattr(
+                config,
+                propname,
+                cast(object, getattr(default_config, propname)),
+            )
     # handle skip_missing_interpreters specially because
     # it is stored in config.option
     if (
         "skip_missing_interpreters" not in tox_sec
         and "skip_missing_interpreters" in def_tox_sec
     ):
-        default_config.option.skip_missing_interpreters = def_tox_sec[
-            "skip_missing_interpreters"
-        ]
+        default_config.option.skip_missing_interpreters = cast(
+            bool, def_tox_sec["skip_missing_interpreters"]
+        )
         config.option.skip_missing_interpreters = (
             default_config.option.skip_missing_interpreters
         )
@@ -216,38 +248,12 @@ def merge_config(config, default_config):
             merge_envconf(config.envconfigs[def_envname], def_envconf)
 
 
-def is_lsr_enabled(config):
-    # type: (Config) -> bool
-    """
-    See if the tox-lsr plugin is enabled.
-
-    First look for a cmdline option, then the env var, then
-    finally see if there is a setting in the [lsr_config]
-    section.
-    """
-    opt = getattr(config.option, LSR_ENABLE, None)
-    if opt is not None:
-        return opt
-    if LSR_ENABLE_ENV in os.environ:
-        return os.environ[LSR_ENABLE_ENV] == "true"
-    return config._cfg.get(LSR_CONFIG_SECTION, LSR_ENABLE, "false") == "true"
-
-
 @hookimpl
 def tox_addoption(parser):
     # type: (Parser) -> None
     """Add lsr-enable option."""
 
-    # pylint: disable=consider-using-f-string
-    parser.add_argument(
-        "--lsr-enable",
-        dest=LSR_ENABLE,
-        action="store_true",
-        help="Enable the use of the tox-lsr plugin (env: {envvar})".format(
-            envvar=LSR_ENABLE_ENV
-        ),
-        default=None,
-    )
+    add_tox_lsr_options(parser)
 
 
 # Run this hook *before* any other tox_configure hook,
@@ -261,40 +267,11 @@ def tox_configure(config):
     if not is_lsr_enabled(config):
         return
 
-    lsr_scriptdir = os.environ.get(LSR_SCRIPTDIR_ENV)
-    if not lsr_scriptdir:
-        # pylint: disable=consider-using-f-string
-        lsr_script_filename = pkg_resources.resource_filename(
-            __name__,
-            "{tsdir}/{tsname}".format(
-                tsdir=TEST_SCRIPTS_SUBDIR,
-                tsname=SCRIPT_NAME,
-            ),
-        )
-        lsr_scriptdir = os.path.dirname(lsr_script_filename)
-    lsr_configdir = os.environ.get(LSR_CONFIGDIR_ENV)
-    if not lsr_configdir:
-        # pylint: disable=consider-using-f-string
-        lsr_config_filename = pkg_resources.resource_filename(
-            __name__,
-            "{cfdir}/{cfname}".format(
-                cfdir=CONFIG_FILES_SUBDIR,
-                cfname=CONFIG_NAME,
-            ),
-        )
-        lsr_configdir = os.path.dirname(lsr_config_filename)
-    # pylint: disable=consider-using-f-string
-    lsr_default = pkg_resources.resource_string(
-        __name__,
-        "{cfdir}/{deftox}".format(
-            cfdir=CONFIG_FILES_SUBDIR,
-            deftox=TOX_DEFAULT_INI,
-        ),
-    ).decode()
-    lsr_default = (
-        merge_ini(config, lsr_default)
-        .replace(LSR_SCRIPTDIR_KW, lsr_scriptdir)
-        .replace(LSR_CONFIGDIR_KW, lsr_configdir)
+    lsr_scriptdir = get_lsr_scriptdir()
+    lsr_configdir = get_lsr_configdir()
+    lsr_default = get_lsr_default()
+    lsr_default = lsr_interpolate(
+        merge_ini(config, lsr_default), lsr_scriptdir, lsr_configdir
     )
     config.option.workdir = config.toxworkdir
     try:
@@ -323,7 +300,17 @@ def tox_configure(config):
         tox_ini_tmp.flush()
         lsr_path = _LSRPath(config.toxinipath, tox_ini_tmp.name)
         try:
-            _ = ParseIni(default_config, lsr_path, None)
+            _ = ParseIni(default_config, cast(str, lsr_path), None)
         except TypeError:  # old version of tox
-            _ = ParseIni(default_config, lsr_path)
+            _ = ParseIni(default_config, cast(str, lsr_path))
         merge_config(config, default_config)
+
+
+def setup():
+    # type: () -> None
+    """
+    Set up hooks.
+
+    Actually, hooks are set up during import of this module. However, we need
+    to have 'something' to 'import from'.
+    """
