@@ -43,5 +43,5 @@ setup(
         "tox": ["lsr = tox_lsr.hooks"],
     },
     python_requires=">=2.6, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*",
-    install_requires=["tox<4", "configparser"],
+    install_requires=["tox", "configparser"],
 )
