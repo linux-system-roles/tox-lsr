@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: MIT
 #
 """Test utilities."""
+
+from copy import deepcopy
+
 try:
     from unittest.mock import Mock
 except ImportError:
@@ -14,6 +17,65 @@ except ImportError:
 # on the same line, so I have to disable it before the line
 # pylint: disable=no-member
 import py
+
+
+class Namespace(object):
+    """Attribute container."""
+
+
+def make_object(**kwargs):
+    """Create object with attributes from kwargs."""
+
+    obj = Namespace()
+    # pylint: disable=consider-using-dict-items
+    for key in kwargs:
+        setattr(obj, key, kwargs[key])
+    return obj
+
+
+class MockConfigParser(object):
+    """Mock the ConfigParser."""
+
+    # pylint: disable=unused-argument
+    def __init__(self, *args, **kwargs):
+        """Initialize the ConfigParser mock."""
+
+        self._data = deepcopy(kwargs.get("data", {}))
+
+    def sections(self):
+        """Mock the ConfigParser.sections method."""
+
+        return list(self._data.keys())
+
+    def options(self, section):
+        """Mock the ConfigParser.options method."""
+
+        return list(self._data[section].keys())
+
+    def has_section(self, section):
+        """Mock the ConfigParser.has_section method."""
+
+        return section in self._data
+
+    def has_option(self, section, key):
+        """Mock the ConfigParser.has_option method."""
+
+        return key in self._data[section]
+
+    def get(self, section, key):
+        """Mock the ConfigParser.get method."""
+
+        return self._data[section][key]
+
+
+class MockIniSource(object):
+    """Mock the IniSource."""
+
+    # pylint: disable=unused-argument
+    def __init__(self, *args, **kwargs):
+        """Initialize the IniSource mock."""
+
+        self._parser = kwargs.get("parser", None)
 
 
 # mocks the tox.config.Config class
@@ -33,6 +95,12 @@ class MockConfig(object):
         "envlist_explicit",
         "envconfigs",
     )
+
+    # pylint: disable=unused-argument
+    def cfg_get_func(self, section, key, default):
+        """Mock the self._cfg.get method."""
+
+        return default
 
     def __init__(self, *args, **kwargs):
         """Mock the tox.config.Config constructor."""
@@ -63,9 +131,19 @@ class MockConfig(object):
         self._cfg = Mock()
         self._cfg.sections = {}
         self._cfg.sections["tox"] = {}
+        self._cfg.get = kwargs.get("cfg_get_func", self.cfg_get_func)
         self.envlist_explicit = Mock()
         self.envconfigs = {}
         self._testenv_attr = Mock()
+
+
+class MockConfig4(object):
+    """Mock tox 4 Config."""
+
+    def __init__(self, **kwargs):
+        """Initialize config with kwargs."""
+        self._options = kwargs.get("options", None)
+        self._src = kwargs.get("config_source", None)
 
 
 class MockToxParseIni(object):

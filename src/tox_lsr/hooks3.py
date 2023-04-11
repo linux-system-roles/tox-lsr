@@ -15,8 +15,8 @@ from tox.config import Config, Parser, TestenvConfig, testenvprefix
 
 try:
     from tox.config import ParseIni  # tox 3.4.0+
-except ImportError:
-    from tox.config import parseini as ParseIni
+except ImportError:  # pragma: no cover
+    from tox.config import parseini as ParseIni  # pragma: no cover
 
 from .utils import (
     add_tox_lsr_options,
@@ -48,13 +48,13 @@ if TYPE_CHECKING:
 else:
     try:
         from cStringIO import StringIO
-    except ImportError:
-        from io import StringIO
+    except ImportError:  # pragma: no cover
+        from io import StringIO  # pragma: no cover
 
     try:
         from ConfigParser import ConfigParser
-    except ImportError:
-        from configparser import ConfigParser
+    except ImportError:  # pragma: no cover
+        from configparser import ConfigParser  # pragma: no cover
 
 # code uses some protected members such as _cfg, _parser, _reader
 # pylint: disable=protected-access

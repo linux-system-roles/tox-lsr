@@ -35,14 +35,7 @@ except AttributeError:
     from unittest import TestCase
 
 from tox_lsr.hooks3 import (
-    CONFIG_FILES_SUBDIR,
-    LSR_CONFIG_SECTION,
-    LSR_ENABLE,
-    LSR_ENABLE_ENV,
-    SCRIPT_NAME,
-    TOX_DEFAULT_INI,
     _LSRPath,
-    is_lsr_enabled,
     merge_config,
     merge_envconf,
     merge_ini,
@@ -51,6 +44,12 @@ from tox_lsr.hooks3 import (
     set_prop_values_ini,
     tox_addoption,
     tox_configure,
+)
+from tox_lsr.utils import (
+    CONFIG_FILES_SUBDIR,
+    LSR_ENABLE,
+    SCRIPT_NAME,
+    TOX_DEFAULT_INI,
 )
 
 from .utils import MockConfig
@@ -95,7 +94,7 @@ class HooksTestCase(TestCase):
 
         config = MockConfig(toxworkdir=self.toxworkdir)
         with patch(
-            "tox_lsr.hooks.is_lsr_enabled", return_value=False
+            "tox_lsr.hooks3.is_lsr_enabled", return_value=False
         ) as mock_ile:
             tox_configure(config)
             self.assertEqual(1, mock_ile.call_count)
@@ -107,17 +106,17 @@ class HooksTestCase(TestCase):
             "pkg_resources.resource_string",
             return_value=self.default_tox_ini_b,
         ) as mock_rs:
-            with patch("tox_lsr.hooks.merge_config") as mock_mc:
+            with patch("tox_lsr.hooks3.merge_config") as mock_mc:
                 with patch(
-                    "tox_lsr.hooks.merge_ini",
+                    "tox_lsr.hooks3.merge_ini",
                     return_value=self.default_tox_ini_raw,
                 ) as mock_mi:
                     with patch(
-                        "tox_lsr.hooks.Config",
+                        "tox_lsr.hooks3.Config",
                         side_effect=[TypeError(), default_config],
                     ) as mock_cfg:
                         with patch(
-                            "tox_lsr.hooks.ParseIni",
+                            "tox_lsr.hooks3.ParseIni",
                             side_effect=[TypeError(), None],
                         ) as mock_pi:
                             tox_configure(config)
@@ -272,9 +271,9 @@ class HooksTestCase(TestCase):
         def_tec = Mock(unsettable="unsettable")
         tec = Mock()
         with patch(
-            "tox_lsr.hooks.prop_is_set", side_effect=mock_unsettable_is_set
+            "tox_lsr.hooks3.prop_is_set", side_effect=mock_unsettable_is_set
         ):
-            with patch("tox_lsr.hooks.setattr", side_effect=AttributeError()):
+            with patch("tox_lsr.hooks3.setattr", side_effect=AttributeError()):
                 merge_envconf(tec, def_tec)
                 self.assertNotEqual(tec.unsettable, "unsettable")
 
@@ -293,7 +292,7 @@ class HooksTestCase(TestCase):
         )
         def_tec = Mock(spec=[prop], propa=prop, _ignoreme="ignoreme")
         tec = Mock(spec=[prop])
-        with patch("tox_lsr.hooks.prop_is_set", side_effect=mock_prop_is_set):
+        with patch("tox_lsr.hooks3.prop_is_set", side_effect=mock_prop_is_set):
             merge_envconf(tec, def_tec)
         unittest_mock.FILTER_DIR = True  # reset to default
         self.assertEqual(prop, tec.propa)
@@ -307,8 +306,10 @@ class HooksTestCase(TestCase):
 
         def_tec = Mock(spec=[prop], propa=prop)
         tec = Mock(spec=[prop], propa="someothervalue")
-        with patch("tox_lsr.hooks.prop_is_set", side_effect=mock_prop_is_set2):
-            with patch("tox_lsr.hooks.merge_prop_values") as mock_mpv:
+        with patch(
+            "tox_lsr.hooks3.prop_is_set", side_effect=mock_prop_is_set2
+        ):
+            with patch("tox_lsr.hooks3.merge_prop_values") as mock_mpv:
                 merge_envconf(tec, def_tec)
                 self.assertEqual(1, mock_mpv.call_count)
         self.assertEqual("someothervalue", tec.propa)
@@ -342,7 +343,7 @@ class HooksTestCase(TestCase):
         def_tec.envlist_default = ["b", "c"]
         envc = {}
         def_tec.envconfigs = {"b": {}, "c": envc}
-        with patch("tox_lsr.hooks.merge_envconf") as mock_me:
+        with patch("tox_lsr.hooks3.merge_envconf") as mock_me:
             merge_config(tec, def_tec)
             self.assertEqual(1, mock_me.call_count)
         self.assertIs(enva, tec.envconfigs["a"])
@@ -404,33 +405,3 @@ class HooksTestCase(TestCase):
         with patch("traceback.extract_stack", return_value=stack_iniconfig):
             lsr = _LSRPath(real, temp)
             self.assertEqual(temp, str(lsr))
-
-    def test_is_lsr_enabled(self):
-        """Test is_lsr_enabled."""
-
-        config = MockConfig({})
-        config._cfg.get = Mock(return_value="false")
-        self.assertFalse(is_lsr_enabled(config))
-        config._cfg.sections[LSR_CONFIG_SECTION] = {}
-        self.assertFalse(is_lsr_enabled(config))
-        self.assertFalse(is_lsr_enabled(config))
-        config._cfg.get = Mock(return_value="true")
-        self.assertTrue(is_lsr_enabled(config))
-
-        config._cfg.get = Mock(return_value="true")
-        os.environ[LSR_ENABLE_ENV] = "false"
-        self.assertFalse(is_lsr_enabled(config))
-        config._cfg.get = Mock(return_value="false")
-        os.environ[LSR_ENABLE_ENV] = "true"
-        self.assertTrue(is_lsr_enabled(config))
-
-        config = MockConfig()
-        config._cfg.get = Mock(return_value="false")
-        os.environ[LSR_ENABLE_ENV] = "false"
-        setattr(config.option, LSR_ENABLE, True)
-        self.assertTrue(is_lsr_enabled(config))
-        config._cfg.get = Mock(return_value="true")
-        os.environ[LSR_ENABLE_ENV] = "true"
-        setattr(config.option, LSR_ENABLE, False)
-        self.assertFalse(is_lsr_enabled(config))
-        del os.environ[LSR_ENABLE_ENV]
