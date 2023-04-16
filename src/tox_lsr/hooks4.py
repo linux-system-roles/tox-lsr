@@ -184,7 +184,8 @@ def update_config_loaders(core_conf, state):
         section_key=core_section.key,
     )
     loaders.insert(0, tox_loader)
-    core_conf_loaders.insert(0, tox_loader)
+    if loaders is not core_conf_loaders:
+        core_conf_loaders.insert(0, tox_loader)
 
 
 def inject_defaults(config, default_config):

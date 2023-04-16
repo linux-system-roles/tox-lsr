@@ -33,6 +33,20 @@ def make_object(**kwargs):
     return obj
 
 
+class MockArgumentParser(object):
+    """Mock the ArgumentParser."""
+
+    def __init__(self):
+        """Initialize the ArgumentParser mock."""
+
+        self.arguments = []
+
+    def add_argument(self, *args, **kwargs):
+        """Add an argument to the parser."""
+
+        self.arguments.append((args, kwargs))
+
+
 class MockConfigParser(object):
     """Mock the ConfigParser."""
 
@@ -42,30 +56,64 @@ class MockConfigParser(object):
 
         self._data = deepcopy(kwargs.get("data", {}))
 
+    def read_string(self, data):
+        """
+        Read and parse data.
+
+        Actually, for simplicity just deep copy parsed data. This is sufficient
+        for our use case.
+        """
+
+        self._data = deepcopy(data)
+
     def sections(self):
-        """Mock the ConfigParser.sections method."""
+        """Get sections."""
 
         return list(self._data.keys())
 
     def options(self, section):
-        """Mock the ConfigParser.options method."""
+        """Get keys/options under the section."""
 
         return list(self._data[section].keys())
 
     def has_section(self, section):
-        """Mock the ConfigParser.has_section method."""
+        """Test for the section presence."""
 
         return section in self._data
 
     def has_option(self, section, key):
-        """Mock the ConfigParser.has_option method."""
+        """Test for the key/option presence under the section."""
 
         return key in self._data[section]
 
+    def add_section(self, section):
+        """Add a section."""
+
+        self._data[section] = {}
+
     def get(self, section, key):
-        """Mock the ConfigParser.get method."""
+        """Get the value stored under [section] and key."""
 
         return self._data[section][key]
+
+    def set(self, section, key, value):
+        """Store the value under [section] and key."""
+
+        self._data[section][key] = value
+
+
+class MockSection(object):
+    """Mock the Section."""
+
+    def __init__(self, prefix, name):
+        """Initialize the Section mock."""
+
+        self._prefix = prefix
+        self._name = name
+
+        self.key = name
+        if prefix:
+            self.key = prefix + ":" + self.key
 
 
 class MockIniSource(object):
@@ -76,6 +124,26 @@ class MockIniSource(object):
         """Initialize the IniSource mock."""
 
         self._parser = kwargs.get("parser", None)
+        self._section_to_loaders = {}
+
+    @staticmethod
+    def get_core_section():
+        """Get the core section."""
+
+        return MockSection(None, "tox")
+
+
+class MockIniLoader(object):
+    """Mock the IniLoader."""
+
+    def __init__(self, **kwargs):
+        """Initialize the IniLoader mock."""
+
+        self._section = kwargs.get("section", None)
+        self._parser = kwargs.get("parser", None)
+        self.overrides = kwargs.get("overrides", [])
+        self.core_section = kwargs.get("core_section", None)
+        self._section_key = kwargs.get("section_key", None)
 
 
 # mocks the tox.config.Config class
@@ -137,6 +205,14 @@ class MockConfig(object):
         self._testenv_attr = Mock()
 
 
+class MockCoreConfigSet(object):
+    """Mock tox 4 CoreConfigSet."""
+
+    def __init__(self):
+        """Initialize CoreConfigSet mock."""
+        self.loaders = []
+
+
 class MockConfig4(object):
     """Mock tox 4 Config."""
 
@@ -144,6 +220,15 @@ class MockConfig4(object):
         """Initialize config with kwargs."""
         self._options = kwargs.get("options", None)
         self._src = kwargs.get("config_source", None)
+        self._overrides = {}
+
+
+class MockState(object):
+    """Mock tox 4 State."""
+
+    def __init__(self, **kwargs):
+        """Initialize the mocked tox state."""
+        self.conf = MockConfig4(**kwargs)
 
 
 class MockToxParseIni(object):
