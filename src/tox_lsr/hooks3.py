@@ -304,13 +304,3 @@ def tox_configure(config):
         except TypeError:  # old version of tox
             _ = ParseIni(default_config, cast(str, lsr_path))
         merge_config(config, default_config)
-
-
-def setup():
-    # type: () -> None
-    """
-    Set up hooks.
-
-    Actually, hooks are set up during import of this module. However, we need
-    to have 'something' to 'import from'.
-    """

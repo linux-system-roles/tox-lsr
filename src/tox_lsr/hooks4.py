@@ -290,13 +290,3 @@ def tox_add_core_config(core_conf, state):
         cast("IniSource", state.conf._src)._parser, get_default_config()
     )
     update_config_loaders(core_conf, state)
-
-
-def setup():
-    # type: () -> None
-    """
-    Set up hooks.
-
-    Actually, hooks are set up during import of this module. However, we need
-    to have 'something' to 'import from'.
-    """
