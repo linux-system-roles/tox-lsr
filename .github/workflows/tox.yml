@@ -42,9 +42,13 @@ jobs:
           27) export SAFETY_CMD="echo skipping safety" ;;
           esac
           toxpyenv="py${toxpyver}-tox30"
+          # run linters only on ubuntu-latest
+          if test X${{ matrix.pyver_os.os }} = Xubuntu-latest; then
+            linters="black,isort,pylint,flake8,mypy,bandit,pydocstyle,"
+          fi
           # run python unit tests only on the toxenv that matches the
           # current system version of python
-          tox -e "black,isort,pylint,flake8,bandit,pydocstyle,$toxpyenv,coveralls"
+          tox -e "${linters:-}$toxpyenv,coveralls"
   python-26:
     runs-on: ubuntu-16.04
     steps:
