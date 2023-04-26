@@ -29,6 +29,13 @@ usage: tox [--lsr-enable] [--version] [-h] [--help-ini] [-v] [-q]
 ```
 This shows that the `--lsr-enable` flag is available.
 
+### Additional requirements
+
+- `shellcheck` test requires `shellcheck` package.
+On Fedora, you can install it with `dnf install shellcheck`, then you can test shell scripts with `tox -e shellcheck`.
+- `commitlint` test requires `npm` package.
+On Fedora you can install it with `dnf install npm`, then you can test commits with `tox -e commitlint`.
+
 ### Molecule and Ansible Version Support
 
 As of August 30, 2021, system roles do not support the latest versions of
