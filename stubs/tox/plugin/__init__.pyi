@@ -1,20 +1,21 @@
 #                                                         -*- coding: utf-8 -*-
 # SPDX-License-Identifier: MIT
 #
-"""Type annotations for tox."""
+"""Type annotations for tox.plugin."""
 
 from typing import Callable, TypeVar, overload
 
-from tox.config import Config, Parser
+from tox.config import CoreConfigSet, Parser
+from tox.session import State
 
 _HFTP = TypeVar("_HFTP", bound=Callable[[Parser], None])
-_HFTC = TypeVar("_HFTC", bound=Callable[[Config], None])
+_HFTCS = TypeVar("_HFTCS", bound=Callable[[CoreConfigSet, State], None])
 
 @overload
-def hookimpl(function: _HFTP) -> _HFTP: ...
+def impl(function: _HFTP) -> _HFTP: ...
 
 @overload
-def hookimpl(
+def impl(
     tryfirst: bool = ...,
     trylast: bool = ...,
-) -> Callable[[_HFTC], _HFTC]: ...
+) -> Callable[[_HFTCS], _HFTCS]: ...
