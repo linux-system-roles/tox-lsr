@@ -18,8 +18,6 @@ fi
 pushd "$LSR_TOX_ENV_DIR"
 npm install @commitlint/config-conventional @commitlint/cli
 
-cp "$LSR_CONFIGDIR/commitlint.config.js" ./
-
 npx commitlint --from origin/HEAD \
     --to $(git rev-parse --abbrev-ref HEAD) --verbose
 popd
