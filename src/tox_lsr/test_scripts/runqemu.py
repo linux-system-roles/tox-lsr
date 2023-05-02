@@ -376,6 +376,7 @@ def make_setup_yml(
                         "__cloud_init_reqs is success",
                         "item.1.stdout is match('no package requires ')",
                         "not item.0 is match('^procps')",
+                        "not item.0 is match('^libselinux-python')",
                     ],  # noqa: E501
                     "ignore_errors": True,
                     "no_log": no_log,
