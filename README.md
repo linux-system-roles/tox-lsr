@@ -501,6 +501,9 @@ You must provide one of `--image-file` or `--image-name`.
 * `--artifacts` - The path of the directory containing the VM provisioner log files.
   By default this is `artifacts/` and `artifacts.snap/` in the current directory.
   The corresponding environment variable is `LSR_QEMU_ARTIFACTS`.
+* `--ssh-el6` - default is `false`.  If `true`, the system is an EL6 system
+  which requires some additional SSH configuration.  The corresponding
+  environment variable is `LSR_QEMU_SSH_EL6`.
 
 Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
@@ -672,11 +675,14 @@ variables will not be defined.
 #### RHEL/CentOS-6 managed host support
 
 The native version of Python on RHEL 6 is 2.6.
-The last ansible supporting Python2 is 2.12.
+The last ansible supporting Python2.6 is 2.12.
 So, to execute `runqemu` against RHEL/CentOS-6 managed host,
-please specify `qemu-ansible-core-2.12` as follows.
+please specify `qemu-ansible-core-2.12` as follows.  You will
+also need to add `--ssh-el6` if you are using a newer EL9 or
+Fedora control node, or some other system which uses "modern"
+crypto and needs to use old, deprecated crypto to talk to EL6.
 ```
-tox -e "$ansible_core" -- --image-name rhel-6 info -- test_playbook.yml
+tox -e "$ansible_core" -- --image-name rhel-6 --ssh-el6 -- test_playbook.yml
 ```
 Alternatively, following is the command line to run `runqemu.py` directly.
 This command line allows you to use python2, which is useful if `ansible 2.9`
@@ -687,11 +693,10 @@ version.
 python runqemu.py --config=NONE --cache=/path/to/cache_dir \
   --inventory=/usr/share/ansible/inventory/standard-inventory-qcow2 \
   --image-file=/path/to/cache_dir/RHEL_6_10_GA.qcow2 \
-  --setup-yml=/path/to/cache_dir/_setup.yml \
+  --setup-yml=/path/to/cache_dir/_setup.yml --ssh-el6 \
   --artifacts=/path/to/artifacts --wait-on-qemu --log-level info \
   -- /path/to/cache_dir/_setup.yml test_playbook.yml
 ```
-`runqemu.py` examines the `--image-name` or `--image-file` value.
-If it starts with `rhel-6`, `centos-6` or `RHEL_6`, it configures
-the ssh args to connect to the older version of sshd running on
-RHEL/CentOS-6 host.
+Older versions of `runqemu.py` would examine the `--image-name` or
+`--image-file` value to determine if the image is an EL6 image, but this is now
+deprecated. You must specify `--ssh-el6` if you need it.

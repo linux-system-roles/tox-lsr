@@ -519,23 +519,15 @@ def get_image_config(args):
     return image
 
 
-def prep_rhel6(args):
+def prep_el6(args):
     """
-    Extra treatment for rhel/centos6.
+    Extra treatment for EL6.
 
     1) Create openssl_el6.conf in $HOME/.config and set OPENSSL_CONF to it.
     2) Set the ssh extra args to ansible_args for the ansible execution
        as well as to the environment variable TEST_EXTRA_SSH_ARGS for qemu.
     """
-    if args.image_name:
-        image_name = args.image_name
-    else:
-        image_name = os.path.splitext(os.path.basename(args.image_file))[0]
-    if not (
-        image_name.startswith("rhel-6")
-        or image_name.startswith("centos-6")
-        or image_name.startswith("RHEL_6")
-    ):
+    if not args.ssh_el6:
         return
     # If it does not exist, create openssl_el6.conf in ~/.config.
     dot_config = os.path.join(os.environ["HOME"], ".config")
@@ -557,7 +549,7 @@ rh-allow-sha1-signatures = yes
         "-o KexAlgorithms=+diffie-hellman-group14-sha1 -o MACs=+hmac-sha1 "
         "-o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedKeyTypes=+ssh-rsa"
     )
-    logging.info("RHEL6 - ssh args: %s", os.environ["TEST_EXTRA_SSH_ARGS"])
+    logging.info("EL6 - ssh args: %s", os.environ["TEST_EXTRA_SSH_ARGS"])
     return
 
 
@@ -1427,6 +1419,15 @@ def get_arg_parser():
             "0 start_ts end_ts my_test_name setup.yml ...."
         ),
     )
+    parser.add_argument(
+        "--ssh-el6",
+        action="store_true",
+        default=bool(strtobool(os.environ.get("LSR_QEMU_SSH_EL6", "False"))),
+        help=(
+            "Use additional SSH arguments and configuration to talk to "
+            "an EL6 host."
+        ),
+    )
     return parser
 
 
@@ -1453,7 +1454,7 @@ def main():
     if not os.path.isdir(args.cache):
         os.makedirs(args.cache)
 
-    prep_rhel6(args)
+    prep_el6(args)
     image = get_image_config(args)
     runqemu(
         image,
