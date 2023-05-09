@@ -397,7 +397,6 @@ def make_setup_yml(
                     ),
                     "no_log": no_log,
                     "args": {
-                        "warn": False,
                         "creates": "/etc/yum.repos.d/epel.repo",
                     },
                     "when": [
@@ -409,27 +408,18 @@ def make_setup_yml(
                     "name": "Create yum cache",
                     "command": "yum makecache",
                     "when": "ansible_pkg_mgr == 'yum'",
-                    "args": {
-                        "warn": False,
-                    },
                     "no_log": no_log,
                 },
                 {
                     "name": "Create dnf cache",
                     "command": "dnf makecache",
                     "when": "ansible_pkg_mgr == 'dnf'",
-                    "args": {
-                        "warn": False,
-                    },
                     "no_log": no_log,
                 },
                 {
                     "name": "Disable EPEL 7",
                     "command": "yum-config-manager --disable epel",
                     "no_log": no_log,
-                    "args": {
-                        "warn": False,
-                    },
                     "when": [
                         "ansible_distribution in ['RedHat', 'CentOS']",
                         "ansible_distribution_major_version == '7'",
@@ -439,9 +429,6 @@ def make_setup_yml(
                     "name": "Disable EPEL 8",
                     "command": "dnf config-manager --set-disabled epel",
                     "no_log": no_log,
-                    "args": {
-                        "warn": False,
-                    },
                     "when": [
                         "ansible_distribution in ['RedHat', 'CentOS']",
                         "ansible_distribution_major_version == '8'",
