@@ -79,7 +79,7 @@ configuration, usually in tox.ini file, in the following way:
 1. For every pair (section, key) in tox-default.ini:
    * if (section, key) is not in tox.ini:
      * interpolate the value and add it to tox.ini under (section, key);
-   * otherwise, if key is one of deps, setenv, passenv or whitelist_externals:
+   * otherwise, if key is one of deps, setenv, passenv or allowlist_externals:
      * add the default value before the user-specific value and interpolate the
        entire result;
    * otherwise, interpolate the user-specific value.
@@ -199,7 +199,7 @@ def inject_defaults(config, default_config):
     For every (section, key) in tox-default.ini:
     * if (section, key) is not in tox.ini, add it and interpolate
     * otherwise, if key is one of setenv, deps, passenv, or
-      whitelist_externals:
+      allowlist_externals:
       * insert the value from tox-default.ini before the value from tox.ini and
         interpolate
     * otherwise, only interpolate
@@ -228,7 +228,7 @@ def inject_defaults(config, default_config):
                 config.set(
                     section, key, lsr_interpolate(value, scripts, configs)
                 )
-            elif key in ("setenv", "deps", "passenv", "whitelist_externals"):
+            elif key in ("setenv", "deps", "passenv", "allowlist_externals"):
                 value += "\n" + config.get(section, key)
                 config.set(
                     section, key, lsr_interpolate(value, scripts, configs)

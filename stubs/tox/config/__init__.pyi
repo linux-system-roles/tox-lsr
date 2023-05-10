@@ -56,7 +56,7 @@ class TestenvConfig(object):
     factors: Set[str]
     deps: List[str]
     passenv: Set[str]
-    whitelist_externals: List[str]
+    allowlist_externals: List[str]
 
 class Config(object):  # noqa: H238
     # tox 4

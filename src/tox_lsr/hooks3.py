@@ -130,9 +130,9 @@ def merge_prop_values(propname, envconf, def_envconf):
         envconf.deps = list(set(envconf.deps + def_envconf.deps))
     elif propname == "passenv":
         envconf.passenv = envconf.passenv.union(def_envconf.passenv)
-    elif propname == "whitelist_externals":
-        envconf.whitelist_externals = list(
-            set(envconf.whitelist_externals + def_envconf.whitelist_externals)
+    elif propname == "allowlist_externals":
+        envconf.allowlist_externals = list(
+            set(envconf.allowlist_externals + def_envconf.allowlist_externals)
         )
 
 
@@ -140,7 +140,7 @@ def set_prop_values_ini(propname, def_conf, conf):
     # type: (str, MutableMapping[str, str], MutableMapping[str, str]) -> None
     """If propname is one of the values we can merge, do the merge."""
 
-    can_be_merged = set(["setenv", "deps", "passenv", "whitelist_externals"])
+    can_be_merged = set(["setenv", "deps", "passenv", "allowlist_externals"])
     conf_val = conf[propname]
     if propname not in def_conf:
         def_conf[propname] = conf_val
