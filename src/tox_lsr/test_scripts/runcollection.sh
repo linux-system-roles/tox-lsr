@@ -41,6 +41,11 @@ cp "$LSR_TOX_ENV_DIR/tmp/galaxy.yml" "$TOX_WORK_DIR/ansible_collections/$LSR_ROL
 # create the collection in this dir to share with other testenvs
 cd "$TOX_WORK_DIR/ansible_collections/$LSR_ROLE2COLL_NAMESPACE/$LSR_ROLE2COLL_NAME"
 
+# these are for ansible-lint
+cp "$LSR_CONFIGDIR/collection_yamllint.yml" \
+  "$TOX_WORK_DIR/ansible_collections/$LSR_ROLE2COLL_NAMESPACE/$LSR_ROLE2COLL_NAME/.yamllint.yml"
+touch "$TOX_WORK_DIR/ansible_collections/$LSR_ROLE2COLL_NAMESPACE/$LSR_ROLE2COLL_NAME/CHANGELOG.md"
+
 # unit testing not working yet - will need these and more
 #export RUN_PYTEST_UNIT_DIR="$role/unit"
 #export PYTHONPATH="$MY_LSR_TOX_ENV_DIR/ansible_collections/"${LSR_ROLE2COLL_NAME}"/"${LSR_ROLE2COLL_NAME}"/plugins/modules:$MY_LSR_TOX_ENV_DIR/ansible_collections/"${LSR_ROLE2COLL_NAME}"/"${LSR_ROLE2COLL_NAME}"/plugins/module_utils"
