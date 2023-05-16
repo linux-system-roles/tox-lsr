@@ -47,7 +47,7 @@ DEFAULT_INI = {
             "\nLSR_CONFIGDIR = {lsr_configdir}"
         ),
         "deps": ("\npytest" "\nPyYAML" "\ncolorama"),
-        "whitelist_externals": ("\nbash" "\ntouch" "\nfind"),
+        "allowlist_externals": ("\nbash" "\ntouch" "\nfind"),
         "command": "pytest tests/unit",
     },
     "testenv:py36": {
@@ -76,7 +76,7 @@ TOX_INI_MISSING_TOX_SECTION_MERGED = {
             "\nLSR_CONFIGDIR = ./config"
         ),
         "deps": ("\npytest" "\nPyYAML" "\ncolorama"),
-        "whitelist_externals": ("\nbash" "\ntouch" "\nfind"),
+        "allowlist_externals": ("\nbash" "\ntouch" "\nfind"),
         "command": "pytest tests/unit",
     },
     "testenv:py36": {
@@ -94,7 +94,7 @@ TOX_INI_OVERRIDE_DEFAULTS = {
     "testenv": {
         "setenv": "\nLSR_SCRIPTDIR = {lsr_scriptdir}/../../my_scripts",
         "deps": ("\nblack" "\npylint"),
-        "whitelist_externals": ("\nexpect" "\nsed" "\ngrep"),
+        "allowlist_externals": ("\nexpect" "\nsed" "\ngrep"),
         "command": "pytest tests/unit {posargs}",
     },
     "lsr_black": {
@@ -121,7 +121,7 @@ TOX_INI_OVERRIDE_DEFAULTS_MERGED = {
             "\nLSR_SCRIPTDIR = ./scripts/../../my_scripts"
         ),
         "deps": ("\npytest" "\nPyYAML" "\ncolorama" "\n" "\nblack" "\npylint"),
-        "whitelist_externals": (
+        "allowlist_externals": (
             "\nbash" "\ntouch" "\nfind" "\n" "\nexpect" "\nsed" "\ngrep"
         ),
         "command": "pytest tests/unit {posargs}",

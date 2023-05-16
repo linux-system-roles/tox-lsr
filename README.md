@@ -101,7 +101,7 @@ You can use the standard `tox` configuration in your local `tox.ini`, and the
 plugin will attempt to merge those settings with its default settings.  If the
 setting is set in the local `tox.ini`, it will be applied, replacing any default
 setting, if any.  However, there are a few settings which will be merged -
-`setenv`, `passenv`, `deps`, `whitelist_external`.  For `setenv`, you can
+`setenv`, `passenv`, `deps`, `allowlist_external`.  For `setenv`, you can
 override a default setting.  For example, if the default was:
 ```ini
 [testenv:pylint]
@@ -113,7 +113,7 @@ deps =
     b
 passenv =
     A
-whitelist_externals =
+allowlist_externals =
     bash
 commands = pylint ...
 ```
@@ -128,7 +128,7 @@ deps =
     d
 passenv =
     B
-whitelist_externals =
+allowlist_externals =
     sed
     grep
 commands = mypylint
@@ -148,7 +148,7 @@ deps =
 passenv =
     A
     B
-whitelist_externals =
+allowlist_externals =
     bash
     sed
     grep

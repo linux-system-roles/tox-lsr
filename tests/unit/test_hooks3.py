@@ -190,19 +190,19 @@ class HooksTestCase(TestCase):
         # test empty tec
         tec = MagicMock()
         def_tec = MagicMock()
-        propnames = ["setenv", "deps", "passenv", "whitelist_externals"]
+        propnames = ["setenv", "deps", "passenv", "allowlist_externals"]
         empty_attrs = {
             "setenv": {},
             "deps": [],
             "passenv": set(),
-            "whitelist_externals": [],
+            "allowlist_externals": [],
         }
         tec.configure_mock(**deepcopy(empty_attrs))
         full_attrs = {
             "setenv": {"a": "a", "b": "b"},
             "deps": ["a", "b"],
             "passenv": set(["a", "b"]),
-            "whitelist_externals": ["a", "b"],
+            "allowlist_externals": ["a", "b"],
         }
         def_tec.configure_mock(**deepcopy(full_attrs))
         for prop in propnames:
@@ -233,13 +233,13 @@ class HooksTestCase(TestCase):
             "setenv": {"a": "a", "c": "c"},
             "deps": ["a", "c"],
             "passenv": set(["a", "c"]),
-            "whitelist_externals": ["a", "c"],
+            "allowlist_externals": ["a", "c"],
         }
         result_attrs = {
             "setenv": {"a": "a", "b": "b", "c": "c"},
             "deps": ["a", "b", "c"],
             "passenv": set(["a", "b", "c"]),
-            "whitelist_externals": ["a", "b", "c"],
+            "allowlist_externals": ["a", "b", "c"],
         }
         tec = MagicMock()
         def_tec = MagicMock()
@@ -373,13 +373,13 @@ class HooksTestCase(TestCase):
             "setenv": "a\nb",
             "deps": "a",
             "passenv": "TEST_*",
-            "whitelist_externals": "mycmd\nmyothercmd",
+            "allowlist_externals": "mycmd\nmyothercmd",
         }
         def_conf = {
             "setenv": "c\nd",
             "deps": "b",
             "passenv": "*",
-            "whitelist_externals": "bash",
+            "allowlist_externals": "bash",
         }
         set_prop_values_ini("setenv", def_conf, conf)
         self.assertEqual("c\nd\na\nb", def_conf["setenv"])
@@ -387,9 +387,9 @@ class HooksTestCase(TestCase):
         self.assertEqual("b\na", def_conf["deps"])
         set_prop_values_ini("passenv", def_conf, conf)
         self.assertEqual("*\nTEST_*", def_conf["passenv"])
-        set_prop_values_ini("whitelist_externals", def_conf, conf)
+        set_prop_values_ini("allowlist_externals", def_conf, conf)
         self.assertEqual(
-            "bash\nmycmd\nmyothercmd", def_conf["whitelist_externals"]
+            "bash\nmycmd\nmyothercmd", def_conf["allowlist_externals"]
         )
 
     def test_lsr_path(self):
