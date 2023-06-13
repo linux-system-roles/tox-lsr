@@ -33,8 +33,6 @@ This shows that the `--lsr-enable` flag is available.
 
 - `shellcheck` test requires `shellcheck` package.
 On Fedora, you can install it with `dnf install shellcheck`, then you can test shell scripts with `tox -e shellcheck`.
-- `commitlint` test requires `npm` package.
-On Fedora you can install it with `dnf install npm`, then you can test commits with `tox -e commitlint`.
 
 ### Molecule and Ansible Version Support
 
