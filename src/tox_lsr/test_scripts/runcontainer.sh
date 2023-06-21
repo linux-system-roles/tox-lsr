@@ -115,6 +115,9 @@ refresh_test_container() {
              prepkgs="dnf-plugins-core" ;;
         *) pkgcmd=dnf; prepkgs="" ;;
         esac
+        for rpm in $EXTRA_RPMS; do
+            initpkgs="$rpm $initpkgs"
+        done
         image_name="$CONTAINER_BASE_IMAGE"
         if [ -n "${initpkgs:-}" ]; then
             # some images do not have the entrypoint, so that must be installed
@@ -177,6 +180,8 @@ refresh_test_container() {
 }
 
 ERASE_OLD_SNAPSHOT=false
+EXCLUDES=()
+EXTRA_RPMS=()
 while [ -n "${1:-}" ]; do
     key="$1"
     case "$key" in
@@ -188,6 +193,15 @@ while [ -n "${1:-}" ]; do
             CONFIG="$1" ;;
         --erase-old-snapshot)
             ERASE_OLD_SNAPSHOT=true ;;
+        --containers)
+            shift
+            CONTAINER_COUNT="$1" ;;
+        --exclude)
+            shift
+            EXCLUDES+=("$1") ;;
+        --extra-rpm)
+            shift
+            EXTRA_RPMS+=("$1") ;;
         --*) # unknown option
             echo "Unknown option $1"
             exit 1 ;;
@@ -221,57 +235,107 @@ fi
 
 install_requirements
 setup_plugins
-if ! refresh_test_container "$ERASE_OLD_SNAPSHOT" "$setup_yml"; then
-    rm -f "$setup_yml"
-    exit 1
-fi
-rm -f "$setup_yml"
-
-export TEST_ARTIFACTS="${TEST_ARTIFACTS:-artifacts}"
-
-# shellcheck disable=SC2086
-CONTAINER_ID=$(podman run -d $CONTAINER_OPTS ${LSR_CONTAINER_OPTS:-} \
-    $CONTAINER_MOUNTS "$CONTAINER_IMAGE" "$CONTAINER_ENTRYPOINT")
-
-if [ -z "$CONTAINER_ID" ]; then
-    echo ERROR: Failed to start container
-    exit 1
-fi
 
 clean_up() {
     podman rm -f "$CONTAINER_ID" || true
+    rm -f "$setup_yml"
 }
 
-if [ -z "${DEBUG:-}" ]; then
-    trap clean_up EXIT
+export TEST_ARTIFACTS="${TEST_ARTIFACTS:-artifacts}"
+
+run_one_container() {
+    if ! refresh_test_container "$ERASE_OLD_SNAPSHOT" "$setup_yml"; then
+        rm -f "$setup_yml"
+        exit 1
+    fi
+
+    # shellcheck disable=SC2086
+    CONTAINER_ID=$(podman run -d $CONTAINER_OPTS ${LSR_CONTAINER_OPTS:-} \
+        $CONTAINER_MOUNTS "$CONTAINER_IMAGE" "$CONTAINER_ENTRYPOINT")
+
+    if [ -z "$CONTAINER_ID" ]; then
+        echo ERROR: Failed to start container
+        rm -f "$setup_yml"
+        exit 1
+    fi
+
+    if [ -z "${DEBUG:-}" ]; then
+        trap clean_up EXIT
+    fi
+
+    podman exec -i "$CONTAINER_ID" /bin/bash -euxo pipefail -c '
+        limit=30
+        for ii in $(seq 1 $limit); do
+            if systemctl is-active dbus; then
+                break
+            fi
+            sleep 1
+        done
+        if [ $ii = $limit ]; then
+            systemctl status dbus
+            exit 1
+        fi
+        sysctl -w net.ipv6.conf.all.disable_ipv6=0
+        systemctl unmask systemd-udevd
+        systemctl start systemd-udevd
+        for ii in $(seq 1 $limit); do
+            if systemctl is-active systemd-udevd; then
+                break
+            fi
+            sleep 1
+        done
+        if [ $ii = $limit ]; then
+            systemctl status systemd-udevd
+            exit 1
+        fi
+    '
+
+    # shellcheck disable=SC2086
+    ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -c podman -i "$CONTAINER_ID", "$@"
+}
+
+is_included() {
+    for excl in ${EXCLUDES[@]}; do
+        if [[ $1 == *$excl ]]; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+# Drop to be excluded tests from the test list
+playbooks=()
+for test in $@; do
+    if is_included "$test"; then
+        playbooks+=("$test")
+    fi
+done
+
+CONTAINER_COUNT=${CONTAINER_COUNT:-1}
+if [ $CONTAINER_COUNT -eq 1 ]; then
+    run_one_container ${playbooks[@]} &
+elif [ $CONTAINER_COUNT -lt 1 ]; then
+    echo "ERROR: Container count $CONTAINER_COUNT is not positive"
+    exit 1
+else
+    # Divide the test list and run each list on one container
+    pbcount=${#playbooks[@]}
+    quotient=$(($pbcount / $CONTAINER_COUNT))
+    begin=0
+    width=$(($quotient + 1))
+    remainder=$(($pbcount % $CONTAINER_COUNT))
+    left=$pbcount
+    while [ $remainder -gt 0 ]; do
+        run_one_container ${playbooks[@]:$begin:$width} &
+        begin=$(($begin + $width))
+        left=$(($left - $width))
+        remainder=$(($remainder - 1))
+    done
+
+    width=$quotient
+    while [ $left -gt 0 ]; do
+        run_one_container ${playbooks[@]:$begin:$width} &
+        begin=$(($begin + $width))
+        left=$(($left - $width))
+    done
 fi
-
-podman exec -i "$CONTAINER_ID" /bin/bash -euxo pipefail -c '
-    limit=30
-    for ii in $(seq 1 $limit); do
-        if systemctl is-active dbus; then
-            break
-        fi
-        sleep 1
-    done
-    if [ $ii = $limit ]; then
-        systemctl status dbus
-        exit 1
-    fi
-    sysctl -w net.ipv6.conf.all.disable_ipv6=0
-    systemctl unmask systemd-udevd
-    systemctl start systemd-udevd
-    for ii in $(seq 1 $limit); do
-        if systemctl is-active systemd-udevd; then
-            break
-        fi
-        sleep 1
-    done
-    if [ $ii = $limit ]; then
-        systemctl status systemd-udevd
-        exit 1
-    fi
-'
-
-# shellcheck disable=SC2086
-ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -c podman -i "$CONTAINER_ID", "$@"
