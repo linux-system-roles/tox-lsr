@@ -744,9 +744,10 @@ You must provide `--image-name`.
 * `--log-dir PATH` - When using `--parallel` - for each test playbook named `TESTNAME.yml`
   the log will be written to a file named `TESTNAME.log` in the `PATH` directory.
   The default is the directory where `TESTNAME.yml` is found.
-* `--fail-fast true|false` - default `false`, which means all of the tests will be run
-  and continue through failures - if `true`, the tests will stop running when the first
-  error is hit.  This only applies if you specify multiple playbooks.
+* `--extra-rpm` - specifies an additional rpm package to install in the
+    container. Default to none. E.g., `--extra-rpm diffutils --extra-rpm sudo`
+* `--extra-skip-tag` - specifies a tag to skip. Default to none. E.g.,
+    `--extra-skip-tag "tests::some_tag"`
 Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
 and playbooks, separate them with a `--` on the command line:

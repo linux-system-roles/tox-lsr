@@ -2,15 +2,15 @@
 
 set -euo pipefail
 
-CONTAINER_OPTS="--privileged --systemd=true --hostname ${CONTAINER_HOSTNAME:-sut}"
-CONTAINER_MOUNTS="-v /sys/fs/cgroup:/sys/fs/cgroup"
+CONTAINER_OPTS=("--privileged" "--systemd=true" "--hostname" "${CONTAINER_HOSTNAME:-sut}")
+CONTAINER_MOUNTS=("-v" "/sys/fs/cgroup:/sys/fs/cgroup")
 #CONTAINER_ENTRYPOINT="/usr/sbin/init"
 #CONTAINER_IMAGE_NAME=${CONTAINER_IMAGE_NAME:-centos-8}
 #CONTAINER_BASE_IMAGE=${CONTAINER_BASE_IMAGE:-quay.io/centos/centos:stream8}
 #CONTAINER_IMAGE=${CONTAINER_IMAGE:-lsr-test-$CONTAINER_PLATFORM:latest}
 CONTAINER_AGE=${CONTAINER_AGE:-24}  # hours
 CONTAINER_TESTS_PATH=${CONTAINER_TESTS_PATH:-"$TOXINIDIR/tests"}
-CONTAINER_SKIP_TAGS=${CONTAINER_SKIP_TAGS:---skip-tags tests::no_container}
+CONTAINER_SKIP_TAGS=${CONTAINER_SKIP_TAGS:---skip-tags tests::uses_selinux}
 CONTAINER_CONFIG="$HOME/.config/linux-system-roles.json"
 
 COLLECTION_BASE_PATH="${COLLECTION_BASE_PATH:-$TOX_WORK_DIR}"
@@ -27,9 +27,10 @@ info() {
     logit info "$@"
 }
 
-notice() {
-    logit notice "$@"
-}
+# not currently used
+# notice() {
+#     logit notice "$@"
+# }
 
 warning() {
     logit warning "$@"
@@ -40,7 +41,7 @@ error() {
 }
 
 install_requirements() {
-    local rq save_tar force update coll_path
+    local rq save_tar force upgrade coll_path
     # see what capabilities ansible-galaxy has
     if ansible-galaxy collection install --help 2>&1 | grep -q -- --force; then
         force=--force
@@ -53,6 +54,7 @@ install_requirements() {
         info saving local collection at "$coll_path/$LOCAL_COLLECTION"
         save_tar="$(mktemp)"
         tar cfP "$save_tar" -C "$coll_path" "$LOCAL_COLLECTION"
+        # shellcheck disable=SC2064
         trap "rm -f $save_tar" RETURN
     fi
     for rq in meta/requirements.yml meta/collection-requirements.yml; do
@@ -60,6 +62,7 @@ install_requirements() {
             if [ "$rq" = meta/requirements.yml ]; then
                 warning use meta/collection-requirements.yml instead of "$rq"
             fi
+            # shellcheck disable=SC2086
             ansible-galaxy collection install ${force:-} ${upgrade:-} -p "$COLLECTION_BASE_PATH" -vv -r "$rq"
         fi
     done
@@ -169,8 +172,8 @@ refresh_test_container() {
         if [ -n "${initpkgs:-}" ]; then
             # some images do not have the entrypoint, so that must be installed
             # first
-            container_id=$(podman run -d $CONTAINER_OPTS ${LSR_CONTAINER_OPTS:-} \
-                $CONTAINER_MOUNTS "$image_name" sleep 3600)
+            container_id=$(podman run -d "${CONTAINER_OPTS[@]}" ${LSR_CONTAINER_OPTS:-} \
+                "${CONTAINER_MOUNTS[@]}" "$image_name" sleep 3600)
             if [ -z "$container_id" ]; then
                 error Failed to start container
                 return 1
@@ -188,8 +191,8 @@ refresh_test_container() {
             podman rm -f "$container_id"
             image_name="$CONTAINER_IMAGE"
         fi
-        container_id=$(podman run -d $CONTAINER_OPTS ${LSR_CONTAINER_OPTS:-} \
-            $CONTAINER_MOUNTS "$image_name" "$CONTAINER_ENTRYPOINT")
+        container_id=$(podman run -d "${CONTAINER_OPTS[@]}" ${LSR_CONTAINER_OPTS:-} \
+            "${CONTAINER_MOUNTS[@]}" "$image_name" "$CONTAINER_ENTRYPOINT")
         if [ -z "$container_id" ]; then
             error Failed to start container
             return 1
@@ -206,6 +209,7 @@ refresh_test_container() {
             fi
         fi
         if [ -n "${setup_yml:-}" ] && [ -f "${setup_yml}" ] && [ -s "${setup_yml}" ]; then
+            # shellcheck disable=SC2086
             if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
                 "$setup_yml"; then
                 return 1
@@ -222,6 +226,7 @@ refresh_test_container() {
             return 1
         fi
         if [ -f "${CONTAINER_TESTS_PATH}/setup-snapshot.yml" ]; then
+            # shellcheck disable=SC2086
             if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
                 "${CONTAINER_TESTS_PATH}/setup-snapshot.yml"; then
                 return 1
@@ -256,19 +261,20 @@ setup_vault() {
 
 run_playbooks() {
     # shellcheck disable=SC2086
-    local test_pb_base test_dir pb
-    declare -a test_pb=()
+    local test_pb_base test_dir pb test_pbs
+    test_pbs=()
     test_pb_base="$1"; shift
     for pb in "$@"; do
         pb="$(realpath "$pb")"
-        test_pb+=("$pb")
+        test_pbs+=("$pb")
         if [ -z "${test_dir:-}" ]; then
             test_dir="$(dirname "$pb")"
         fi
     done
 
-    container_id=$(podman run -d $CONTAINER_OPTS --name "$test_pb_base" \
-        ${LSR_CONTAINER_OPTS:-} $CONTAINER_MOUNTS "$CONTAINER_IMAGE" \
+    # shellcheck disable=SC2086
+    container_id=$(podman run -d "${CONTAINER_OPTS[@]}" --name "$test_pb_base" \
+        ${LSR_CONTAINER_OPTS:-} "${CONTAINER_MOUNTS[@]}" "$CONTAINER_IMAGE" \
         "$CONTAINER_ENTRYPOINT")
 
     if [ -z "$container_id" ]; then
@@ -278,6 +284,7 @@ run_playbooks() {
 
     inv_file="$(mktemp)"
     if [ -z "${LSR_DEBUG:-}" ]; then
+        # shellcheck disable=SC2064
         trap "rm -rf $inv_file; podman rm -f $container_id" RETURN EXIT
     fi
     sleep 1  # give the container a chance to start up
@@ -316,19 +323,20 @@ run_playbooks() {
 
     echo "sut ansible_host=$container_id ansible_connection=podman" > "$inv_file"
     setup_vault "$test_dir" "${test_pb_base}.yml"
-    # shellcheck disable=SC2086
     pushd "$test_dir" > /dev/null
     if [ "$PARALLEL" -gt 0 ]; then
-        for pb in ${test_pb[@]}; do
+        for pb in "${test_pbs[@]}"; do
+            # shellcheck disable=SC2086
             ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} ${EXTRA_SKIP_TAGS:-} \
                 -i "$inv_file" ${vault_args:-} \
                 -e ansible_playbook_filepath="$(type -p ansible-playbook)" "$pb"
         done
     else
+        # shellcheck disable=SC2086
         ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} ${EXTRA_SKIP_TAGS:-} \
             -i "$inv_file" ${vault_args:-} \
             -e ansible_playbook_filepath="$(type -p ansible-playbook)" \
-            "${test_pb[@]}"
+            "${test_pbs[@]}"
     fi
     popd > /dev/null
 }
@@ -369,7 +377,7 @@ wait_for_results() {
     lsr_wait || rc=$?
     test_pb_base="${cur_jobs[$PID]}"
     results["$test_pb_base"]="$rc"
-    unset cur_jobs["$PID"]
+    unset 'cur_jobs["$PID"]'
     if [ "$rc" = 0 ]; then
         info Test "$test_pb_base" SUCCESS
     else
@@ -385,7 +393,6 @@ wait_for_results() {
 
 ERASE_OLD_SNAPSHOT=false
 PARALLEL=0
-FAIL_FAST=true
 EXTRA_RPMS=()
 EXTRA_SKIP_TAGS=""
 while [ -n "${1:-}" ]; do
@@ -402,9 +409,6 @@ while [ -n "${1:-}" ]; do
         --parallel)
             shift
             PARALLEL="$1" ;;
-        --fail-fast)
-            shift
-            FAIL_FAST="$1" ;;
         --log-dir)
             shift
             LOG_DIR="$1" ;;
@@ -469,14 +473,14 @@ if [ "$PARALLEL" -gt 1 ]; then
     while [ -n "${1:-}" ]; do
         if [ "${#cur_jobs[*]}" -lt "$PARALLEL" ]; then
             orig_test_pb="$1"; shift
-            test_pb="$(realpath "$orig_test_pb")"
-            test_pb_base="$(basename "$test_pb" .yml)"
-            log_dir="${LOG_DIR:-$(dirname "$test_pb")}"
+            abs_test_pb="$(realpath "$orig_test_pb")"
+            test_pb_base="$(basename "$abs_test_pb" .yml)"
+            log_dir="${LOG_DIR:-$(dirname "$abs_test_pb")}"
             log_file="${test_pb_base}.log"
             if [ ! -d "$log_dir" ]; then
                 mkdir -p "$log_dir"
             fi
-            run_playbooks "$test_pb_base" "$test_pb" > "$log_dir/$log_file" 2>&1 &
+            run_playbooks "$test_pb_base" "$abs_test_pb" > "$log_dir/$log_file" 2>&1 &
             cur_jobs["$!"]="$test_pb_base"
             log_files["$test_pb_base"]="$log_dir/$log_file"
             test_pb["$test_pb_base"]="$orig_test_pb"
@@ -497,7 +501,6 @@ fi
 exit_code=0
 for test_pb_base in "${!results[@]}"; do
     rc="${results[$test_pb_base]}"
-    log="${log_files[$test_pb_base]}"
     orig_test_pb="${test_pb[$test_pb_base]}"
     if [ "$rc" != 0 ]; then
         exit_code="$rc"
