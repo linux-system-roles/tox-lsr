@@ -162,6 +162,9 @@ refresh_test_container() {
              prepkgs="dnf-plugins-core" ;;
         *) pkgcmd=dnf; prepkgs="" ;;
         esac
+        for rpm in ${EXTRA_RPMS:-}; do
+            initpkgs="$rpm $initpkgs"
+        done
         image_name="$CONTAINER_BASE_IMAGE"
         if [ -n "${initpkgs:-}" ]; then
             # some images do not have the entrypoint, so that must be installed
@@ -315,8 +318,18 @@ run_playbooks() {
     setup_vault "$test_dir" "${test_pb_base}.yml"
     # shellcheck disable=SC2086
     pushd "$test_dir" > /dev/null
-    ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" ${vault_args:-} \
-        -e ansible_playbook_filepath="$(type -p ansible-playbook)" "${test_pb[@]}"
+    if [ "$PARALLEL" -gt 0 ]; then
+        for pb in ${test_pb[@]}; do
+            ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} ${EXTRA_SKIP_TAGS:-} \
+                -i "$inv_file" ${vault_args:-} \
+                -e ansible_playbook_filepath="$(type -p ansible-playbook)" "$pb"
+        done
+    else
+        ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} ${EXTRA_SKIP_TAGS:-} \
+            -i "$inv_file" ${vault_args:-} \
+            -e ansible_playbook_filepath="$(type -p ansible-playbook)" \
+            "${test_pb[@]}"
+    fi
     popd > /dev/null
 }
 
@@ -373,6 +386,8 @@ wait_for_results() {
 ERASE_OLD_SNAPSHOT=false
 PARALLEL=0
 FAIL_FAST=true
+EXTRA_RPMS=()
+EXTRA_SKIP_TAGS=""
 while [ -n "${1:-}" ]; do
     key="$1"
     case "$key" in
@@ -393,6 +408,12 @@ while [ -n "${1:-}" ]; do
         --log-dir)
             shift
             LOG_DIR="$1" ;;
+        --extra-rpm)
+            shift
+            EXTRA_RPMS+=("$1") ;;
+        --extra-skip-tag)
+            shift
+            EXTRA_SKIP_TAGS="--skip-tags $1 $EXTRA_SKIP_TAGS" ;;
         --*) # unknown option
             echo "Unknown option $1"
             exit 1 ;;
