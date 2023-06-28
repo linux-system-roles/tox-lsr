@@ -24,7 +24,14 @@ jobs:
     steps:
       - name: checkout PR
         uses: actions/checkout@v3
-      - name: Set up Python
+      - name: Set up Python 2.7
+        if: ${{ matrix.pyver_os.ver == '2.7' }}
+        run: |
+          set -euxo pipefail
+          sudo apt update
+          sudo apt install -y python2.7
+      - name: Set up Python 3
+        if: ${{ matrix.pyver_os.ver != '2.7' }}
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.pyver_os.ver }}
@@ -49,33 +56,3 @@ jobs:
           # run python unit tests only on the toxenv that matches the
           # current system version of python
           tox -e "${linters:-}$toxpyenv,coveralls"
-  python-26:
-    runs-on: ubuntu-16.04
-    steps:
-      - name: checkout PR
-        uses: actions/checkout@v3
-      - name: Install python, dependencies
-        run: |
-          set -euo pipefail
-          curl -sSf --retry 5 -o python-2.6.tar.bz2 ${PY26URL}
-          sudo tar xjf python-2.6.tar.bz2 --directory /
-          myuid=$(id -u)
-          mygid=$(id -g)
-          sudo chown -R $myuid:$mygid /home/travis/virtualenv
-          source /home/travis/virtualenv/python2.6/bin/activate
-          set -x
-          pip install -rtox-requirements.txt
-        env:
-          # yamllint disable-line rule:line-length
-          PY26URL: https://storage.googleapis.com/travis-ci-language-archives/python/binaries/ubuntu/14.04/x86_64/python-2.6.tar.bz2
-          VIRTUAL_ENV_DISABLE_PROMPT: "true"
-      - name: Run tox tests
-        run: |
-          set -euo pipefail
-          source /home/travis/virtualenv/python2.6/bin/activate
-          set -x
-          tox -e py26-tox20,coveralls26
-        env:
-          SAFETY_CMD: "echo skipping safety"
-          VIRTUAL_ENV_DISABLE_PROMPT: "true"
-          COVERALLS_CMD: "echo skipping report in py26-tox20 - will use separate testenv"
