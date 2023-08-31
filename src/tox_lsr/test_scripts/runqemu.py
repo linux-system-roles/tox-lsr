@@ -611,10 +611,12 @@ def internal_run_ansible_playbooks(
     cwd,
     wait_on_qemu=False,
     log_file=None,
+    cleanup_yml=None,
 ):
     """Run ansible-playbook with the LOCK_ON_FILE if wait_on_qemu is True."""
     if wait_on_qemu:
         test_env["LOCK_ON_FILE"] = tempfile.NamedTemporaryFile().name
+    success = False
     try:
         with file_or_stdout(log_file) as (stdout, stderr):
             subprocess.check_call(  # nosec
@@ -630,7 +632,25 @@ def internal_run_ansible_playbooks(
                 stdout=stdout,
                 stderr=stderr,
             )
+        success = True
     finally:
+        if cleanup_yml is not None:
+            with file_or_stdout(log_file) as (stdout, stderr):
+                subprocess.check_call(  # nosec
+                    [
+                        "ansible-playbook",
+                        "-vv",
+                        "--inventory=" + inventory,
+                        "-e",
+                        "main_success=" + str(success),
+                    ]
+                    + ansible_args
+                    + cleanup_yml,
+                    env=test_env,
+                    cwd=cwd,
+                    stdout=stdout,
+                    stderr=stderr,
+                )
         if wait_on_qemu:
             stop_qemu(test_env)
 
@@ -782,6 +802,7 @@ def handle_vault(tests_dir, ansible_args, playbooks, test_env):
 def run_ansible_playbooks(  # noqa: C901
     image,
     setup_yml,
+    cleanup_yml,
     test_env,
     debug,
     image_alias,
@@ -873,6 +894,12 @@ def run_ansible_playbooks(  # noqa: C901
         if args and args.setup_yml:
             local_setup_yml.extend(args.setup_yml)
         local_setup_yml = [os.path.abspath(setup) for setup in local_setup_yml]
+        local_cleanup_yml = list(cleanup_yml)
+        if args and args.cleanup_yml:
+            local_cleanup_yml.extend(args.cleanup_yml)
+        local_cleanup_yml = [
+            os.path.abspath(cleanup) for cleanup in local_cleanup_yml
+        ]
         if args and args.tests_dir:
             cwd = args.tests_dir
         elif tests_dir:
@@ -912,6 +939,7 @@ def run_ansible_playbooks(  # noqa: C901
                 cwd,
                 wait_on_qemu,
                 local_log_file,
+                local_cleanup_yml,
             )
             if local_log_file:
                 logging.info("Playbook run was successful")
@@ -977,6 +1005,7 @@ def install_requirements(sourcedir, collection_path, test_env, collection):
             force_flag = "--force"
     coll_rqf = os.path.join(sourcedir, "meta", "collection-requirements.yml")
     tests_rqf = os.path.join(sourcedir, "tests", "collection-requirements.yml")
+    galaxy_env = {"ANSIBLE_COLLECTIONS_PATHS": collection_path}
     for reqfile in [coll_rqf, tests_rqf]:
         if os.path.isfile(reqfile):
             ag_cmd = [
@@ -985,7 +1014,7 @@ def install_requirements(sourcedir, collection_path, test_env, collection):
                 "install",
                 "-p",
                 collection_path,
-                "-vvv",
+                "-vv",
                 "-r",
                 reqfile,
             ]
@@ -995,6 +1024,7 @@ def install_requirements(sourcedir, collection_path, test_env, collection):
                 ag_cmd,
                 stdout=sys.stdout,
                 stderr=sys.stderr,
+                env=galaxy_env,
             )
             test_env["ANSIBLE_COLLECTIONS_PATHS"] = collection_path
     if collection_save_file:
@@ -1024,6 +1054,9 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
     )
     if not os.path.isdir(callback_plugin_dir):
         os.makedirs(callback_plugin_dir)
+    galaxy_env = {
+        "ANSIBLE_COLLECTIONS_PATHS": os.environ["LSR_TOX_ENV_TMP_DIR"]
+    }
     debug_py = os.path.join(callback_plugin_dir, "debug.py")
     profile_py = os.path.join(callback_plugin_dir, "profile_tasks.py")
     if (pretty and not os.path.isfile(debug_py)) or (
@@ -1041,6 +1074,7 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
             ],
             stdout=sys.stdout,
             stderr=sys.stderr,
+            env=galaxy_env,
         )
         tmp_debug_py = os.path.join(
             os.environ["LSR_TOX_ENV_TMP_DIR"],
@@ -1102,6 +1136,7 @@ def runqemu(
     use_snapshot=False,
     use_ansible_log=False,
     setup_yml=None,
+    cleanup_yml=None,
     wait_on_qemu=False,
     write_inventory=None,
     erase_old_snapshot=False,
@@ -1134,6 +1169,9 @@ def runqemu(
         local_setup_yml.extend(setup_yml)
     if post_setup_yml:
         local_setup_yml.append(post_setup_yml)
+    local_cleanup_yml = []
+    if cleanup_yml:
+        local_cleanup_yml.extend(cleanup_yml)
     if collection_path is None and "TOX_WORK_DIR" in os.environ:
         collection_path = os.environ["TOX_WORK_DIR"]
     test_env = dict(image.get("env", {}))
@@ -1152,6 +1190,7 @@ def runqemu(
     run_ansible_playbooks(
         image,
         local_setup_yml,
+        local_cleanup_yml,
         test_env,
         debug,
         image_alias,
@@ -1311,6 +1350,17 @@ def get_arg_parser():
         help="one or more setup.yml to use in addition to config.",
     )
     parser.add_argument(
+        "--cleanup-yml",
+        action="append",
+        default=[],
+        help=(
+            "one or more cleanup.yml playbooks.  These will be run even "
+            "if the main playbooks fail.  The status will be passed to "
+            "the playbooks so they can take action depending on if the main "
+            "playbooks succeeded or failed."
+        ),
+    )
+    parser.add_argument(
         "--wait-on-qemu",
         action="store_true",
         default=bool(
@@ -1427,6 +1477,8 @@ def main():
     args.ansible_args = ansible_args
     if not args.setup_yml and "LSR_QEMU_SETUP_YML" in os.environ:
         args.setup_yml = os.environ["LSR_QEMU_SETUP_YML"].split(",")
+    if not args.cleanup_yml and "LSR_QEMU_CLEANUP_YML" in os.environ:
+        args.cleanup_yml = os.environ["LSR_QEMU_CLEANUP_YML"].split(",")
     logging.getLogger().setLevel(getattr(logging, args.log_level.upper()))
     # either image-name or image-file must be given
     if not any([args.image_name, args.image_file]) or all(
@@ -1459,6 +1511,7 @@ def main():
         use_snapshot=args.use_snapshot,
         use_ansible_log=True,
         setup_yml=args.setup_yml,
+        cleanup_yml=args.cleanup_yml,
         wait_on_qemu=args.wait_on_qemu,
         write_inventory=args.write_inventory,
         erase_old_snapshot=args.erase_old_snapshot,
