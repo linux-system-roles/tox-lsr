@@ -611,6 +611,8 @@ def internal_run_ansible_playbooks(
     cwd,
     wait_on_qemu=False,
     log_file=None,
+    last_rc=0,
+    batch_rc=0,
 ):
     """Run ansible-playbook with the LOCK_ON_FILE if wait_on_qemu is True."""
     if wait_on_qemu:
@@ -622,6 +624,10 @@ def internal_run_ansible_playbooks(
                     "ansible-playbook",
                     "-vv",
                     "--inventory=" + inventory,
+                    "-e",
+                    "last_rc=" + str(last_rc),
+                    "-e",
+                    "batch_rc=" + str(batch_rc),
                 ]
                 + ansible_args
                 + playbooks,
@@ -779,9 +785,75 @@ def handle_vault(tests_dir, ansible_args, playbooks, test_env):
         logging.info("Using vault variables")
 
 
+class Batch(object):
+    def __init__(self, args, ansible_args, playbooks, setup_playbooks):
+        self.args = args
+        self.ansible_args = ansible_args
+        self.playbooks = [os.path.abspath(pb) for pb in playbooks]
+        self.setup_playbooks = [os.path.abspath(pb) for pb in setup_playbooks]
+
+
+def get_batches_from_playbooks_and_args(
+    ansible_args,
+    playbooks,
+    setup_yml,
+    cleanup_yml,
+    batch_file,
+):
+    """Get the batches to run from the given arguments.  Each batch is a
+    tuple.  The elements are: runqemu args, ansible args, playbooks,
+    setup playbooks.  Note that if the batch is for cleanup playbooks,
+    then there will be no setup playbooks for that batch.  Every playbook
+    will be converted to the absolute path."""
+    batches = [Batch(None, ansible_args, playbooks, setup_yml)]
+    if batch_file or cleanup_yml:
+        # for cleanup_yml, the strategy is to insert a one after each playbook
+        # in the batch, so that one or more cleanup playbooks are run after
+        # each main playbook(s)
+        if batch_file:
+            batch_arg_parser = get_arg_parser()
+            with open(batch_file) as bf:
+                for line in bf:
+                    args, ansible_args = batch_arg_parser.parse_known_args(
+                        shlex.split(line)
+                    )
+                    ansible_args, playbooks = split_args_and_playbooks(
+                        ansible_args
+                    )
+                    if not ansible_args:
+                        ansible_args = batches[0].ansible_args
+                    batches.append(
+                        Batch(
+                            args,
+                            ansible_args,
+                            playbooks,
+                            setup_yml + args.setup_yml,
+                        )
+                    )
+                    if args.cleanup_yml or cleanup_yml:
+                        batches.append(
+                            Batch(
+                                args,
+                                ansible_args,
+                                args.cleanup_yml + cleanup_yml,
+                                [],
+                            )
+                        )
+        elif cleanup_yml:
+            batches_with_cleanup = []
+            for batch in batches:
+                batches_with_cleanup.append(batch)
+                batches_with_cleanup.append(
+                    Batch(batch.args, batch.ansible_args, cleanup_yml, [])
+                )
+            batches = batches_with_cleanup
+    return batches
+
+
 def run_ansible_playbooks(  # noqa: C901
     image,
     setup_yml,
+    cleanup_yml,
     test_env,
     debug,
     image_alias,
@@ -804,26 +876,18 @@ def run_ansible_playbooks(  # noqa: C901
     test_env.update(dict(os.environ))
     orig_inventory = inventory
     ansible_args, playbooks = split_args_and_playbooks(ansible_args)
-    batches = [(None, ansible_args, playbooks)]
+    batches = get_batches_from_playbooks_and_args(
+        ansible_args, playbooks, setup_yml, cleanup_yml, batch_file
+    )
     batch_inventory = None
+    rc = 0
     batch_rc = 0
-    if batch_file:
-        batch_arg_parser = get_arg_parser()
-        with open(batch_file) as bf:
-            for line in bf:
-                args, ansible_args = batch_arg_parser.parse_known_args(
-                    shlex.split(line)
-                )
-                ansible_args, playbooks = split_args_and_playbooks(
-                    ansible_args
-                )
-                if not ansible_args:
-                    ansible_args = batches[0][1]
-                batches.append((args, ansible_args, playbooks))
+    if batch_file or cleanup_yml:
         if not write_inventory:
             batch_inventory = tempfile.NamedTemporaryFile(suffix=".yml").name
             write_inventory = batch_inventory
         test_env["LOCK_ON_FILE"] = tempfile.NamedTemporaryFile().name
+
     test_env["TEST_SUBJECTS"] = image["file"]
     snapfile = test_env["TEST_SUBJECTS"] + ".snap"
     if image_alias:
@@ -832,17 +896,17 @@ def run_ansible_playbooks(  # noqa: C901
         test_env["ANSIBLE_COLLECTIONS_PATHS"] = collection_path
     if write_inventory:
         test_env["TEST_INVENTORY"] = write_inventory
-    for args, ansible_args, playbooks in batches:
-        if not playbooks:
+    for batch in batches:
+        if not batch.playbooks:
             continue  # i.e. user specified playbooks only in batch_file
-        if args and args.debug:
+        if batch.args and batch.args.debug:
             test_env["TEST_DEBUG"] = "true"
         elif debug and not batch_file:
             test_env["TEST_DEBUG"] = "true"
         elif "TEST_DEBUG" in test_env:
             del test_env["TEST_DEBUG"]
-        if args and args.artifacts:
-            test_env["TEST_ARTIFACTS"] = args.artifacts
+        if batch.args and batch.args.artifacts:
+            test_env["TEST_ARTIFACTS"] = batch.args.artifacts
         elif artifacts:
             test_env["TEST_ARTIFACTS"] = artifacts
         elif "TEST_ARTIFACTS" not in test_env:
@@ -857,8 +921,8 @@ def run_ansible_playbooks(  # noqa: C901
         if not os.path.isdir(test_env["TEST_ARTIFACTS"]):
             os.makedirs(test_env["TEST_ARTIFACTS"])
 
-        if args and args.log_file:
-            local_log_file = os.path.abspath(args.log_file)
+        if batch.args and batch.args.log_file:
+            local_log_file = os.path.abspath(batch.args.log_file)
         elif log_file:
             local_log_file = os.path.abspath(log_file)
         else:
@@ -868,50 +932,50 @@ def run_ansible_playbooks(  # noqa: C901
         # of the first playbook - so that we can find the
         # provision.fmf, if any - this means we have to use
         # abs paths for the playbooks
-        playbooks = [os.path.abspath(pth) for pth in playbooks]
-        local_setup_yml = list(setup_yml)
-        if args and args.setup_yml:
-            local_setup_yml.extend(args.setup_yml)
-        local_setup_yml = [os.path.abspath(setup) for setup in local_setup_yml]
-        if args and args.tests_dir:
-            cwd = args.tests_dir
+        if batch.args and batch.args.tests_dir:
+            cwd = batch.args.tests_dir
         elif tests_dir:
             cwd = tests_dir
         else:
-            cwd = os.path.dirname(playbooks[0])
+            cwd = os.path.dirname(batch.playbooks[0])
         if (
-            (args and args.erase_old_snapshot) or erase_old_snapshot
+            (batch.args and batch.args.erase_old_snapshot)
+            or erase_old_snapshot
         ) and os.path.exists(snapfile):
             os.unlink(snapfile)
-        if (args and args.use_snapshot) or use_snapshot:
+        if (batch.args and batch.args.use_snapshot) or use_snapshot:
             test_env["TEST_SUBJECTS"] = snapfile
             refresh_snapshot(
                 image["file"],
                 snapfile,
                 orig_inventory,
                 test_env,
-                ansible_args,
-                local_setup_yml,
+                batch.ansible_args,
+                batch.setup_playbooks,
                 cwd,
                 post_snap_sleep_time,
                 local_log_file,
             )
+            playbooks = batch.playbooks
         else:
-            playbooks = local_setup_yml + playbooks
-        handle_vault(cwd, ansible_args, playbooks, test_env)
+            playbooks = batch.setup_playbooks + batch.playbooks
+        handle_vault(cwd, batch.ansible_args, playbooks, test_env)
         if local_log_file:
             logging.info("Running playbooks %s", str(playbooks))
+        last_rc = rc
         rc = 0
         start_ts = time.time()
         try:
             internal_run_ansible_playbooks(
                 test_env,
                 inventory,
-                ansible_args,
+                batch.ansible_args,
                 playbooks,
                 cwd,
                 wait_on_qemu,
                 local_log_file,
+                last_rc,
+                batch_rc,
             )
             if local_log_file:
                 logging.info("Playbook run was successful")
@@ -922,8 +986,8 @@ def run_ansible_playbooks(  # noqa: C901
             if local_log_file:
                 logging.error("Playbook run failed with error %d", rc)
         if batch_report:
-            if args.batch_id:
-                batch_id_str = " " + args.batch_id
+            if batch.args and batch.args.batch_id:
+                batch_id_str = " " + batch.args.batch_id
             else:
                 batch_id_str = ""
             with open(batch_report, "a") as br:
@@ -977,6 +1041,7 @@ def install_requirements(sourcedir, collection_path, test_env, collection):
             force_flag = "--force"
     coll_rqf = os.path.join(sourcedir, "meta", "collection-requirements.yml")
     tests_rqf = os.path.join(sourcedir, "tests", "collection-requirements.yml")
+    galaxy_env = {"ANSIBLE_COLLECTIONS_PATHS": collection_path}
     for reqfile in [coll_rqf, tests_rqf]:
         if os.path.isfile(reqfile):
             ag_cmd = [
@@ -985,7 +1050,7 @@ def install_requirements(sourcedir, collection_path, test_env, collection):
                 "install",
                 "-p",
                 collection_path,
-                "-vvv",
+                "-vv",
                 "-r",
                 reqfile,
             ]
@@ -995,6 +1060,7 @@ def install_requirements(sourcedir, collection_path, test_env, collection):
                 ag_cmd,
                 stdout=sys.stdout,
                 stderr=sys.stderr,
+                env=galaxy_env,
             )
             test_env["ANSIBLE_COLLECTIONS_PATHS"] = collection_path
     if collection_save_file:
@@ -1024,6 +1090,9 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
     )
     if not os.path.isdir(callback_plugin_dir):
         os.makedirs(callback_plugin_dir)
+    galaxy_env = {
+        "ANSIBLE_COLLECTIONS_PATHS": os.environ["LSR_TOX_ENV_TMP_DIR"]
+    }
     debug_py = os.path.join(callback_plugin_dir, "debug.py")
     profile_py = os.path.join(callback_plugin_dir, "profile_tasks.py")
     if (pretty and not os.path.isfile(debug_py)) or (
@@ -1041,6 +1110,7 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
             ],
             stdout=sys.stdout,
             stderr=sys.stderr,
+            env=galaxy_env,
         )
         tmp_debug_py = os.path.join(
             os.environ["LSR_TOX_ENV_TMP_DIR"],
@@ -1102,6 +1172,7 @@ def runqemu(
     use_snapshot=False,
     use_ansible_log=False,
     setup_yml=None,
+    cleanup_yml=[],
     wait_on_qemu=False,
     write_inventory=None,
     erase_old_snapshot=False,
@@ -1134,6 +1205,9 @@ def runqemu(
         local_setup_yml.extend(setup_yml)
     if post_setup_yml:
         local_setup_yml.append(post_setup_yml)
+    local_cleanup_yml = []
+    if cleanup_yml:
+        local_cleanup_yml.extend(cleanup_yml)
     if collection_path is None and "TOX_WORK_DIR" in os.environ:
         collection_path = os.environ["TOX_WORK_DIR"]
     test_env = dict(image.get("env", {}))
@@ -1152,6 +1226,7 @@ def runqemu(
     run_ansible_playbooks(
         image,
         local_setup_yml,
+        local_cleanup_yml,
         test_env,
         debug,
         image_alias,
@@ -1311,6 +1386,17 @@ def get_arg_parser():
         help="one or more setup.yml to use in addition to config.",
     )
     parser.add_argument(
+        "--cleanup-yml",
+        action="append",
+        default=[],
+        help=(
+            "one or more cleanup.yml playbooks.  These will be run even "
+            "if the main playbooks fail.  The status will be passed to "
+            "the playbooks so they can take action depending on if the main "
+            "playbooks succeeded or failed."
+        ),
+    )
+    parser.add_argument(
         "--wait-on-qemu",
         action="store_true",
         default=bool(
@@ -1427,6 +1513,8 @@ def main():
     args.ansible_args = ansible_args
     if not args.setup_yml and "LSR_QEMU_SETUP_YML" in os.environ:
         args.setup_yml = os.environ["LSR_QEMU_SETUP_YML"].split(",")
+    if not args.cleanup_yml and "LSR_QEMU_CLEANUP_YML" in os.environ:
+        args.cleanup_yml = os.environ["LSR_QEMU_CLEANUP_YML"].split(",")
     logging.getLogger().setLevel(getattr(logging, args.log_level.upper()))
     # either image-name or image-file must be given
     if not any([args.image_name, args.image_file]) or all(
@@ -1459,6 +1547,7 @@ def main():
         use_snapshot=args.use_snapshot,
         use_ansible_log=True,
         setup_yml=args.setup_yml,
+        cleanup_yml=args.cleanup_yml,
         wait_on_qemu=args.wait_on_qemu,
         write_inventory=args.write_inventory,
         erase_old_snapshot=args.erase_old_snapshot,
