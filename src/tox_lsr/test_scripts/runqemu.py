@@ -786,7 +786,10 @@ def handle_vault(tests_dir, ansible_args, playbooks, test_env):
 
 
 class Batch(object):
+    """The data for each batch of playbooks."""
+
     def __init__(self, args, ansible_args, playbooks, setup_playbooks):
+        """Init the batch object."""
         self.args = args
         self.ansible_args = ansible_args
         self.playbooks = [os.path.abspath(pb) for pb in playbooks]
@@ -800,11 +803,14 @@ def get_batches_from_playbooks_and_args(
     cleanup_yml,
     batch_file,
 ):
-    """Get the batches to run from the given arguments.  Each batch is a
-    tuple.  The elements are: runqemu args, ansible args, playbooks,
-    setup playbooks.  Note that if the batch is for cleanup playbooks,
-    then there will be no setup playbooks for that batch.  Every playbook
-    will be converted to the absolute path."""
+    """
+    Get the batches to run from the given arguments.
+
+    Each batch has one or more of runqemu args, ansible args, playbooks, setup
+    playbooks.  Note that if the batch is for cleanup playbooks, then there
+    will be no setup playbooks for that batch.  Every playbook will be
+    converted to the absolute path.
+    """
     batches = [Batch(None, ansible_args, playbooks, setup_yml)]
     if batch_file or cleanup_yml:
         # for cleanup_yml, the strategy is to insert a one after each playbook
