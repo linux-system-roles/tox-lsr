@@ -1,6 +1,7 @@
 ignore_files:
   - .tox
   - .github
+  - .README.html
   - .sanity-ansible-ignore-*.txt
   - pylintrc
   - vendor
