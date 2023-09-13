@@ -1,0 +1,737 @@
+version: '2'
+mpp-vars:
+  extra_tree_content:
+    - mpp-if: use_luks and luks_auto_unlock
+      then:
+        from: input://extra-tree/luks-key
+        to: tree:///usr/.auto-unlock-key
+    - mpp-if: use_containers
+      then:
+        from: input://extra-tree/storage.conf
+        to: tree:///etc/containers/storage.conf
+    - mpp-if: use_containers
+      then:
+        from: input://extra-tree/containers.conf
+        to: tree:///etc/containers/containers.conf
+    - mpp-if: use_ostree
+      then:
+        from: input://extra-tree/ostree_prepare_root.conf
+        to: tree:///usr/lib/ostree/prepare-root.conf
+    - from: input://extra-tree/build-info
+      to: tree:///etc/build-info
+    - mpp-if: use_qm or use_hirte
+      then:
+        from: input://extra-tree/hirte_agent.conf
+        to: tree:///etc/hirte/agent.conf
+    - mpp-if: use_qm or use_hirte
+      then:
+        from: input://extra-tree/hirte.conf
+        to: tree:///etc/hirte/hirte.conf
+    - mpp-if: use_qm
+      then:
+        from: input://extra-tree/qm.container
+        to: tree:///etc/containers/systemd/qm.container
+
+  dracut_install:
+    mpp-join:
+      - mpp-eval: dracut_install
+      - mpp-if: use_luks and luks_auto_unlock
+        then:
+          - /usr/.auto-unlock-key
+  kernel_opts:
+    mpp-join:
+      - - mpp-if: use_ostree
+          then: rw
+          else: ro
+        - loglevel=$kernel_loglevel
+        - mpp-if: use_efi_runtime
+          then: efi=runtime
+      - mpp-eval: kernel_opts
+      - mpp-if: use_luks
+        then:
+          - rd.luks.uuid=$luks_uuid
+          - rd.luks.options=discard
+          - mpp-if: luks_auto_unlock
+            then: rd.luks.key=$luks_uuid=/usr/.auto-unlock-key
+  image_extra_stages:
+    mpp-join:
+      - mpp-eval: image_extra_stages
+      - - type: org.osbuild.locale
+          options:
+            language:
+              mpp-eval: locale
+        - type: org.osbuild.timezone
+          options:
+            zone:
+              mpp-eval: timezone
+        - type: org.osbuild.systemd
+          options:
+            enabled_services:
+              mpp-eval: image_enabled_services
+            masked_services:
+              mpp-eval: image_masked_services
+        - mpp-if: use_qm
+          then:
+            type: org.osbuild.mkdir
+            options:
+              paths:
+              - path: /usr/lib/qm/rootfs
+                parents: true
+        - mpp-if: use_qm
+          then:
+            type: org.osbuild.copy
+            inputs:
+              tree:
+                type: org.osbuild.tree
+                origin: org.osbuild.pipeline
+                references:
+                  - name:qm_rootfs
+            options:
+              paths:
+                - from: input://tree/
+                  to: tree:///usr/lib/qm/rootfs/
+
+pipelines:
+# Some variables need to be written to files, do that here
+- name: extra-tree-content
+  build: name:build
+  stages:
+  - type: org.osbuild.copy
+    inputs:
+      inlinefile:
+        type: org.osbuild.files
+        origin: org.osbuild.source
+        mpp-embed:
+          id: luks-key
+          text: $luks_passphrase
+    options:
+      paths:
+        - from:
+            mpp-format-string: input://inlinefile/{embedded['luks-key']}
+          to: tree:///luks-key
+  - type: org.osbuild.copy
+    inputs:
+      inlinefile:
+        type: org.osbuild.files
+        origin: org.osbuild.source
+        mpp-embed:
+          id: storage.conf
+          text: $containers_storage_conf
+    options:
+      paths:
+      - from:
+          mpp-format-string: input://inlinefile/{embedded['storage.conf']}
+        to: tree:///storage.conf
+  - type: org.osbuild.copy
+    inputs:
+      inlinefile:
+        type: org.osbuild.files
+        origin: org.osbuild.source
+        mpp-embed:
+          id: containers.conf
+          text: $containers_conf
+    options:
+      paths:
+      - from:
+          mpp-format-string: input://inlinefile/{embedded['containers.conf']}
+        to: tree:///containers.conf
+  - type: org.osbuild.copy
+    inputs:
+      inlinefile:
+        type: org.osbuild.files
+        origin: org.osbuild.source
+        mpp-embed:
+          id: ostree_prepare_root.conf
+          text: $ostree_prepare_root_conf
+    options:
+      paths:
+      - from:
+          mpp-format-string: input://inlinefile/{embedded['ostree_prepare_root.conf']}
+        to: tree:///ostree_prepare_root.conf
+  - type: org.osbuild.copy
+    inputs:
+      inlinefile:
+        type: org.osbuild.files
+        origin: org.osbuild.source
+        mpp-embed:
+          id: build-info
+          text: $build_info
+    options:
+      paths:
+      - from:
+          mpp-format-string: input://inlinefile/{embedded['build-info']}
+        to: tree:///build-info
+
+  - type: org.osbuild.copy
+    inputs:
+      inlinefile:
+        type: org.osbuild.files
+        origin: org.osbuild.source
+        mpp-embed:
+          id: hirte_agent_conf
+          text: $bluechi_agent_conf
+      inlinefile2:
+        type: org.osbuild.files
+        origin: org.osbuild.source
+        mpp-embed:
+          id: hirte_conf
+          text: $bluechi_conf
+      inlinefile3:
+        type: org.osbuild.files
+        origin: org.osbuild.source
+        mpp-embed:
+          id: qm_container
+          path: ../files/qm.container
+    options:
+      paths:
+      - from:
+          mpp-format-string: input://inlinefile/{embedded['hirte_agent_conf']}
+        to: tree:///hirte_agent.conf
+      - from:
+          mpp-format-string: input://inlinefile2/{embedded['hirte_conf']}
+        to: tree:///hirte.conf
+      - from:
+          mpp-format-string: input://inlinefile3/{embedded['qm_container']}
+        to: tree:///qm.container
+
+- mpp-import-pipelines:
+    path: image-$image_type.ipp.yml
+- name: image
+  build: name:build
+  stages:
+    mpp-join:
+    - - type: org.osbuild.truncate
+        options:
+          filename: disk.img
+          size:
+            mpp-eval: image.size
+      - type: org.osbuild.sfdisk
+        devices:
+          device:
+            type: org.osbuild.loopback
+            options:
+              filename: disk.img
+        options:
+          mpp-format-json: '{image.layout}'
+      - mpp-if: use_aboot and use_abootpart
+        then:
+          type: org.osbuild-auto.write-device
+          devices:
+            device:
+              type: org.osbuild.loopback
+              options:
+                filename: disk.img
+                start:
+                  mpp-eval: image.layout['boot_a'].start
+                size:
+                  mpp-eval: image.layout['boot_a'].size
+          inputs:
+            tree:
+              type: org.osbuild.tree
+              origin: org.osbuild.pipeline
+              references:
+              - name:image-tree
+          options:
+            from:
+              mpp-format-string: "input://tree/boot/aboot-{rpms[kernel_osbuild_tree][kernel_core_package].evra}.img"
+      - mpp-if: use_efipart
+        then:
+          type: org.osbuild.mkfs.fat
+          devices:
+            device:
+              type: org.osbuild.loopback
+              options:
+                filename: disk.img
+                start:
+                  mpp-eval: image.layout['efi'].start
+                size:
+                  mpp-eval: image.layout['efi'].size
+          options:
+            label: ESP
+            volid: 7B7795E7
+      - mpp-if: use_bootpart
+        then:
+          type: org.osbuild.mkfs.ext4
+          devices:
+            device:
+              type: org.osbuild.loopback
+              options:
+                filename: disk.img
+                start:
+                  mpp-eval: image.layout['boot'].start
+                size:
+                  mpp-eval: image.layout['boot'].size
+          options:
+            uuid:
+              mpp-eval: bootfs_uuid
+            label: boot
+    - mpp-if: use_luks
+      then:
+        - type: org.osbuild.luks2.format
+          devices:
+            device:
+              type: org.osbuild.loopback
+              options:
+                filename: disk.img
+                start:
+                  mpp-eval: image.layout['root'].start
+                size:
+                  mpp-eval: image.layout['root'].size
+                lock: true
+          options:
+            passphrase:
+              mpp-eval: luks_passphrase
+            uuid:
+              mpp-eval: luks_uuid
+            label: luks-rootfs
+            pbkdf:
+              method: argon2i
+              memory: 32
+              parallelism: 1
+              iterations: 4
+            integrity:
+              mpp-if: luks_use_integrity
+              then: hmac-sha256
+        - type: org.osbuild.lvm2.create
+          devices:
+            luks:
+              type: org.osbuild.loopback
+              options:
+                filename: disk.img
+                start:
+                  mpp-eval: image.layout['root'].start
+                size:
+                  mpp-eval: image.layout['root'].size
+            device:
+              type: org.osbuild.luks2
+              parent: luks
+              options:
+                passphrase:
+                  mpp-eval: luks_passphrase
+          options:
+            volumes:
+              - name: root
+                extents: 100%FREE
+    - - type: org.osbuild.mkfs.ext4
+        devices:
+          luks:
+            mpp-if: use_luks
+            then:
+              type: org.osbuild.loopback
+              options:
+                filename: disk.img
+                start:
+                  mpp-eval: image.layout['root'].start
+                size:
+                  mpp-eval: image.layout['root'].size
+          lvm:
+            mpp-if: use_luks
+            then:
+              type: org.osbuild.luks2
+              parent: luks
+              options:
+                passphrase:
+                  mpp-eval: luks_passphrase
+          device:
+            mpp-if: use_luks
+            then:
+              type: org.osbuild.lvm2.lv
+              parent: lvm
+              options:
+                volume: root
+            else:
+              type: org.osbuild.loopback
+              options:
+                filename: disk.img
+                start:
+                  mpp-eval: image.layout['root'].start
+                size:
+                  mpp-eval: image.layout['root'].size
+        options:
+          uuid:
+            mpp-eval: rootfs_uuid
+          label: root
+          verity:
+            mpp-eval: rootfs_verity
+      - type: org.osbuild.copy
+        inputs:
+          tree:
+            type: org.osbuild.tree
+            origin: org.osbuild.pipeline
+            references:
+            - name:image-tree
+          build-tree:
+            type: org.osbuild.tree
+            origin: org.osbuild.pipeline
+            references:
+            - name:build
+          extra-tree:
+            mpp-if: "'extra_image_source_' + image_type in locals()"
+            then:
+              type: org.osbuild.tree
+              origin: org.osbuild.pipeline
+              references:
+                - mpp-format-string: "name:{locals().get('extra_image_source_' + image_type)}"
+        options:
+          paths:
+            mpp-join:
+            - - from: input://tree/
+                to: mount://root/
+            - mpp-eval: locals().get('extra_image_copy_' + image_type, [])
+        devices:
+          efi:
+            mpp-if: use_efipart
+            then:
+               type: org.osbuild.loopback
+               options:
+                 filename: disk.img
+                 start:
+                   mpp-eval: image.layout['efi'].start
+                 size:
+                   mpp-eval: image.layout['efi'].size
+          boot:
+            mpp-if: use_bootpart
+            then:
+              type: org.osbuild.loopback
+              options:
+                filename: disk.img
+                start:
+                  mpp-eval: image.layout['boot'].start
+                size:
+                  mpp-eval: image.layout['boot'].size
+          boot_a:
+            mpp-if: use_abootpart
+            then:
+              type: org.osbuild.loopback
+              options:
+                filename: disk.img
+                start:
+                  mpp-eval: image.layout['boot_a'].start
+                size:
+                  mpp-eval: image.layout['boot_a'].size
+          boot_b:
+            mpp-if: use_abootpart
+            then:
+              type: org.osbuild.loopback
+              options:
+                filename: disk.img
+                start:
+                  mpp-eval: image.layout['boot_b'].start
+                size:
+                  mpp-eval: image.layout['boot_b'].size
+          root:
+            mpp-if: use_luks
+            then:
+              type: org.osbuild.lvm2.lv
+              parent: root-luks
+              options:
+                volume: root
+            else:
+              type: org.osbuild.loopback
+              options:
+                filename: disk.img
+                start:
+                  mpp-eval: image.layout['root'].start
+                size:
+                  mpp-eval: image.layout['root'].size
+          root-raw:
+            mpp-if: use_luks
+            then:
+              type: org.osbuild.loopback
+              options:
+                filename: disk.img
+                start:
+                  mpp-eval: image.layout['root'].start
+                size:
+                  mpp-eval: image.layout['root'].size
+          root-luks:
+            mpp-if: use_luks
+            then:
+              type: org.osbuild.luks2
+              parent: root-raw
+              options:
+                passphrase:
+                  mpp-eval: luks_passphrase
+        mounts:
+        - name: root
+          type: org.osbuild.ext4
+          source: root
+          target: /
+        - mpp-if: use_bootpart
+          then:
+            name: boot
+            type: org.osbuild.ext4
+            source: boot
+            target: /boot
+        - mpp-if: use_efipart
+          then:
+            name: efi
+            type: org.osbuild.fat
+            source: efi
+            target: /boot/efi
+
+      - mpp-if: use_composefs and use_ostree
+        then:
+          type: org.osbuild-auto.ostree.deploy-verity
+          options:
+            repo: /ostree/repo
+          devices:
+            root:
+              mpp-if: use_luks
+              then:
+                type: org.osbuild.lvm2.lv
+                parent: root-luks
+                options:
+                  volume: root
+              else:
+                type: org.osbuild.loopback
+                options:
+                  filename: disk.img
+                  start:
+                    mpp-eval: image.layout['root'].start
+                  size:
+                    mpp-eval: image.layout['root'].size
+            root-raw:
+              mpp-if: use_luks
+              then:
+                type: org.osbuild.loopback
+                options:
+                  filename: disk.img
+                  start:
+                    mpp-eval: image.layout['root'].start
+                  size:
+                    mpp-eval: image.layout['root'].size
+            root-luks:
+              mpp-if: use_luks
+              then:
+                type: org.osbuild.luks2
+                parent: root-raw
+                options:
+                  passphrase:
+                    mpp-eval: luks_passphrase
+          mounts:
+          - name: root
+            type: org.osbuild.ext4
+            source: root
+            target: /
+
+      - mpp-if: use_luks
+        then:
+          type: org.osbuild.lvm2.metadata
+          devices:
+            luks:
+              type: org.osbuild.loopback
+              options:
+                filename: disk.img
+                start:
+                  mpp-eval: image.layout['root'].start
+                size:
+                  mpp-eval: image.layout['root'].size
+            device:
+              type: org.osbuild.luks2
+              parent: luks
+              options:
+                passphrase:
+                  mpp-eval: luks_passphrase
+          options:
+            vg_name: osbuild
+            creation_host: osbuild
+            description: "Built with osbuild"
+
+- name: qcow2
+  build: name:build
+  stages:
+  - type: org.osbuild.qemu
+    inputs:
+      image:
+        type: org.osbuild.files
+        origin: org.osbuild.pipeline
+        references:
+          name:image:
+            file: disk.img
+    options:
+      filename: disk.qcow2
+      format:
+        type: qcow2
+        compat: '1.1'
+
+# We need a smaller fstab for the non-partitioned case
+- name: ext4-fstab
+  build: name:build
+  stages:
+  # We copy /etc to get the right selinux context on the new file
+  - type: org.osbuild.copy
+    inputs:
+      image-tree:
+        type: org.osbuild.tree
+        origin: org.osbuild.pipeline
+        references:
+        - name:image-tree
+    options:
+      paths:
+      - from: input://image-tree/etc
+        to: tree:///etc
+  - type: org.osbuild.fstab
+    options:
+      filesystems:
+        mpp-join:
+          - - uuid:
+                mpp-eval: rootfs_uuid
+              vfs_type: ext4
+              path: /
+          - mpp-eval:
+              extra_fstab
+
+- name: ext4
+  build: name:build
+  stages:
+  - type: org.osbuild.truncate
+    options:
+      filename: rootfs.ext4
+      size:
+        mpp-eval: image.size
+  - type: org.osbuild.mkfs.ext4
+    devices:
+      device:
+        type: org.osbuild.loopback
+        options:
+          filename: rootfs.ext4
+          start: 0
+          size:
+            mpp-format-int: "{int(image.size) // 512}"
+    options:
+      uuid:
+        mpp-eval: rootfs_uuid
+      label: root
+  - type: org.osbuild.copy
+    inputs:
+      tree:
+        type: org.osbuild.tree
+        origin: org.osbuild.pipeline
+        references:
+        - name:image-tree
+      fstab:
+        mpp-if: not use_ostree
+        then:
+          type: org.osbuild.tree
+          origin: org.osbuild.pipeline
+          references:
+          - name:ext4-fstab
+    options:
+      paths:
+        mpp-join:
+        - - from: input://tree/
+            to: mount://root/
+        - mpp-if: not use_ostree
+          then:
+            - from: input://fstab/etc/fstab
+              to: mount://root/etc/fstab
+        - mpp-eval: locals().get('extra_image_copy_' + image_type, [])
+    devices:
+      root:
+        type: org.osbuild.loopback
+        options:
+          filename: rootfs.ext4
+          start: 0
+          size:
+            mpp-format-int: "{int(image.size) // 512}"
+    mounts:
+    - name: root
+      type: org.osbuild.ext4
+      source: root
+      target: /
+
+- name: aboot
+  build: name:build
+  stages:
+  - type: org.osbuild.mkdir
+    options:
+      paths:
+      - path: /images
+  - type: org.osbuild.copy
+    inputs:
+      ext4:
+        type: org.osbuild.tree
+        origin: org.osbuild.pipeline
+        references:
+        - name:ext4
+      tree:
+        type: org.osbuild.tree
+        origin: org.osbuild.pipeline
+        references:
+        - name:image-tree
+    options:
+      paths:
+        - from: input://ext4/rootfs.ext4
+          to: tree:///images/rootfs.img
+        - from:
+            mpp-if: use_debug
+            then:
+              mpp-format-string: "input://tree/boot/aboot-{rpms[kernel_osbuild_tree][kernel_core_package].evra}+debug.img"
+            else:
+              mpp-format-string: "input://tree/boot/aboot-{rpms[kernel_osbuild_tree][kernel_core_package].evra}.img"
+          to: tree:///images/aboot.img
+# This is essentially rootfs with no image-specific stuff like boot, etc, but with
+# some required extras.
+- name: raw-image-tree
+  build: name:build
+  stages:
+    mpp-join:
+    - - type: org.osbuild.copy
+        inputs:
+          tree:
+            type: org.osbuild.tree
+            origin: org.osbuild.pipeline
+            references:
+            - name:rootfs
+          extra-tree:
+            type: org.osbuild.tree
+            origin: org.osbuild.pipeline
+            references:
+            - name:extra-tree-content
+        options:
+          paths:
+            mpp-join:
+              - - from: input://tree/
+                  to: tree:///
+              - mpp-eval: extra_tree_content
+    - mpp-eval: image_extra_stages
+    - - type: org.osbuild.selinux
+        options:
+          file_contexts: etc/selinux/targeted/contexts/files/file_contexts
+
+- name: container
+  build: name:build
+  stages:
+  - type: org.osbuild.oci-archive
+    inputs:
+      base:
+        type: org.osbuild.tree
+        origin: org.osbuild.pipeline
+        references:
+        - name:raw-image-tree
+    options:
+      filename: container.tar
+      architecture:
+        mpp-eval: goarch
+      config:
+        Entrypoint:
+          mpp-if: container_entrypoint
+          then:
+            mpp-eval: container_entrypoint
+        Cmd:
+          mpp-eval: container_cmd
+
+- name: tar
+  build: name:build
+  stages:
+  - type: org.osbuild.tar
+    inputs:
+      tree:
+        type: org.osbuild.tree
+        origin: org.osbuild.pipeline
+        references:
+        - name:raw-image-tree
+    options:
+      filename: rootfs.tar
+      root-node: omit

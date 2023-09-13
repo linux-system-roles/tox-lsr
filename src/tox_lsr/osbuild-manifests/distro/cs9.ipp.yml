@@ -1,0 +1,20 @@
+version: '2'
+mpp-vars:
+  distro_name: cs9
+  distro_version: 9
+  distro_baseurl: http://mirror.stream.centos.org/9-stream
+  distro_baseurl_repo: $distro_baseurl/BaseOS/$arch/os/
+  distro_repos:
+  - id: baseos
+    baseurl: $distro_baseurl/BaseOS/$arch/os/
+  - id: appstream
+    baseurl: $distro_baseurl/AppStream/$arch/os/
+  - id: ha
+    baseurl: $distro_baseurl/HighAvailability/$arch/os/
+  distro_devel_repos: []
+  distro_debug_repos: []
+  distro_module_id: platform:el9
+  kernel_package: kernel
+  release_rpm: centos-release  # aka release_package
+  linux_firmware_rpm: linux-firmware
+  build_runner: org.osbuild.centos9

@@ -1,0 +1,28 @@
+version: '2'
+mpp-vars:
+  distro_name: cs8
+  distro_version: 8
+  distro_baseurl: http://mirror.centos.org/centos/8-stream
+  distro_repos:
+  - id: baseos
+    baseurl: $distro_baseurl/BaseOS/$arch/os/
+  - id: appstream
+    baseurl: $distro_baseurl/AppStream/$arch/os/
+  - id: ha
+    baseurl: $distro_baseurl/HighAvailability/$arch/os/
+  - id: epel
+    baseurl: https://download.fedoraproject.org/pub/epel/$distro_version/Everything/$arch/
+  distro_devel_repos: []
+  distro_debug_repos: []
+  distro_module_id: platform:el8
+  kernel_package: kernel
+  release_rpm: centos-release  # aka release_package
+  linux_firmware_rpm: linux-firmware
+  build_runner: org.osbuild.centos8
+  # dracut/initramfs stuff is not working on cs8
+  dracut_add_modules: ""
+  dracut_omit_modules: ""
+  dracut_filesystems: ""
+  dracut_add_drivers: ""
+  dracut_install: ""
+  rootfs_verity: false

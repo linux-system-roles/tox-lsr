@@ -725,6 +725,33 @@ Older versions of `runqemu.py` would examine the `--image-name` or
 `--image-file` value to determine if the image is an EL6 image, but this is now
 deprecated. You must specify `--ssh-el6` if you need it.
 
+### Building ostree images
+
+Requirements: You will need to install the following packages to build and run:
+osbuild-ostree osbuild-tools edk2-ovmf
+
+tox-lsr can build images for [ostree](https://coreos.github.io/rpm-ostree/). The
+`/usr` file system is read-only, which means the RPM packages and any other
+files in `/usr` must be provided when the image is built. This means that the
+system roles cannot actually manage (install, remove) packages on the system,
+they can only verify that the required packages are available. You can use
+`-e build_ostree_image -- $image_name` to build an ostree image for testing.
+If you want to build for an image that is not supported by tox-lsr, download the
+appropriate `$image_name.ipp.yml` into your `~/.config` directory.  The image
+will be available as `~/.cache/linux-system-roles/$image_name-ostree.qcow2` You
+can test with the image like this:
+
+```bash
+TEST_USE_OVMF=true tox -e qemu-ansible-core-2.15 -- \
+  --image-file ~/.cache/linux-system-roles/fedora-38-ostree.qcow2 \
+  --log-level debug tests/tests_default.yml
+```
+
+#### .ostree directory
+
+`build_ostree_image` uses the role `.ostree` directory to determine which
+packages to build into the image.
+
 ### Container testing
 
 Integration tests can be run using containers.  `tox` will start one or

@@ -1,0 +1,237 @@
+version: '2'
+
+# We have loaded the variables specified in the manifest, the defaults
+# and in the per-arc/target/image-type includes. We can now do optional
+# things that depend on what was set in that.
+
+mpp-vars:
+  # Backwards compatibility by checking if the deprecated kernel_rpm variable is set
+  kernel_core_package:
+    mpp-if: locals().get('kernel_rpm')
+    then:
+      mpp-eval: kernel_rpm + "-core"
+    else:
+      mpp-eval: kernel_package + "-core"
+  kernel_rpm:
+    mpp-if: locals().get('kernel_rpm')
+    then:
+      mpp-eval: kernel_rpm
+    else:
+      mpp-eval: kernel_package if not kernel_version else kernel_package + "-" + kernel_version
+  use_debug:
+    mpp-if: "'debug' in locals().get('kernel_package')"
+    then: true
+  distro_gpg_keys:
+    mpp-if: locals().get('distro_gpg_keys')
+    then:
+      mpp-eval: distro_gpg_keys
+    else:
+      mpp-format-string: |
+        $centos_gpg_key
+        $redhat_gpg_key
+  # We need to define this ahead of image-ostree.ipp.yml for use below
+  use_ostree:
+    mpp-eval: use_ostree or image_type == 'ostree'
+  fstab:
+    mpp-join:
+    - - uuid:
+          mpp-eval: rootfs_uuid
+        vfs_type: ext4
+        path:
+          mpp-if: use_ostree and use_composefs
+          then: /sysroot
+          else: /
+        freq: 1
+        passno: 1
+      - mpp-if: use_efipart
+        then:
+          label: ESP
+          vfs_type: vfat
+          path: /boot/efi
+          freq: 1
+          passno: 1
+      - mpp-if: use_bootpart
+        then:
+          uuid:
+            mpp-eval: bootfs_uuid
+          vfs_type: ext4
+          path: /boot
+          freq: 1
+          passno: 1
+    - mpp-eval: extra_fstab
+  build_rpms:
+    mpp-join:
+    - mpp-eval: build_rpms
+    - - mpp-if: use_luks
+        then: cryptsetup
+      - mpp-if: use_luks
+        then: lvm2
+      - mpp-if: use_aboot
+        then: aboot-update
+      - mpp-if: use_aboot
+        then: aboot-deploy
+  boot_rpms:
+    mpp-join:
+    - mpp-eval: boot_rpms
+    - - $kernel_rpm
+  base_rpms:
+    mpp-join:
+    - mpp-eval: base_rpms
+    - - $linux_firmware_rpm
+      - mpp-if: use_luks
+        then: lvm2
+      - mpp-if: use_aboot
+        then: aboot-update
+      - mpp-if: use_aboot
+        then: aboot-deploy
+      - mpp-if: use_composefs and use_ostree
+        then: keyutils
+      - mpp-if: use_composefs and use_ostree
+        then: dracut-fsverity
+  dracut_omit_modules:
+    mpp-join:
+    - mpp-eval: dracut_omit_modules
+    - - mpp-if: not use_luks
+        then: dm
+  dracut_filesystems:
+    mpp-join:
+    - mpp-eval: dracut_filesystems
+    - mpp-if: use_composefs and use_ostree
+      then:
+        - overlay
+        - erofs
+  kernel_opts:
+    mpp-join:
+    - mpp-eval: kernel_opts
+    - mpp-if: use_serial_console
+      then:
+        - console=$serial_console
+  image_repos:
+    mpp-join:
+      - mpp-eval: distro_repos
+      - mpp-eval: target_repos
+  image_devel_repos:
+    mpp-join:
+      - mpp-eval: distro_devel_repos
+  containers_storage_conf:
+    mpp-format-string: |
+      [storage]
+      driver = "overlay"
+      runroot = "/run/containers/storage"
+      graphroot = "/var/lib/containers/storage"
+      { "transient_store = true" if containers_transient_store else "" }
+
+      [storage.options]
+      additionalimagestores = [
+         "{containers_extra_store}"
+      ]
+
+      [storage.options.overlay]
+      mountopt = "nodev,metacopy=on"
+  containers_conf:
+    mpp-format-string: |
+      [containers]
+      { "read_only = true" if containers_read_only else "" }
+
+      default_capabilities = [
+        "CHOWN",
+        "DAC_OVERRIDE",
+        "FOWNER",
+        "FSETID",
+        "KILL",
+        "NET_BIND_SERVICE",
+        "SETFCAP",
+        "SETGID",
+        "SETPCAP",
+        "SETUID",
+        "SYS_CHROOT"
+      ]
+
+      # A list of sysctls to be set in containers by default,
+      # specified as "name=value",
+      # for example:"net.ipv4.ping_group_range=0 0".
+      #
+      default_sysctls = [
+        "net.ipv4.ping_group_range=0 0",
+      ]
+
+      # keyring tells the container engine whether to create
+      # a kernel keyring for use within the container.
+      #
+      keyring = false
+  qm_containers_conf:
+    mpp-format-string: |
+      [containers]
+      default_sysctls = []
+      cgroup_conf=[
+        "memory.oom.group=1",
+      ]
+      oom_score_adj = 750
+  qm_containers_storage_conf:
+    mpp-format-string: |
+      [storage]
+      driver = "overlay"
+      runroot = "/run/containers/storage"
+      graphroot = "/var/lib/containers/storage"
+      { "transient_store = true" if containers_transient_store else "" }
+
+      [storage.options]
+      additionalimagestores = [
+         "{qm_containers_extra_store}"
+      ]
+
+      [storage.options.overlay]
+      mountopt = "nodev,metacopy=on"
+  image_enabled_services:
+    mpp-join:
+      - mpp-eval: image_enabled_services
+      - - mpp-if: tmp_is_tmpfs
+          then: tmp.mount
+        - mpp-if: use_containers and containers_transient_store
+          then: podman-clean-transient.service
+        - mpp-if: use_qm or use_hirte
+          then: hirte-agent.service
+        - mpp-if: use_qm or use_hirte
+          then: hirte.service
+  ostree_prepare_root_conf:
+    mpp-format-string: |
+      [sysroot]
+      readonly=true
+      [composefs]
+      enabled={"signed" if use_composefs else "maybe" }
+  build_info:
+    mpp-format-string: |
+      RELEASE="{release_name}"
+      UUID="{image_uuid}"
+      TIMESTAMP="{build_timestamp}"
+      IMAGE_NAME="{image_type}"
+      IMAGE_TARGET="{target}"
+  qm_importfile:
+    mpp-if: use_qm
+    then: "qm"
+    else: "empty"
+  use_hirte:
+    mpp-if: use_qm
+    then: true
+    else:
+      mpp-eval: use_hirte
+  bluechi_agent_conf:
+    mpp-format-string: |
+      [hirte-agent]
+      NodeName={ bluechi_nodename }
+      ManagerHost= { bluechi_manager_host_ip }
+  qm_bluechi_agent_conf:
+    mpp-format-string: |
+      [hirte-agent]
+      NodeName=qm.{ bluechi_nodename }
+      ManagerHost= { bluechi_manager_host_ip }
+  bluechi_conf:
+    mpp-format-string: |
+      [hirte]
+      AllowedNodeNames={ bluechi_nodename },qm.{ bluechi_nodename }
+  qm_subgid:
+    containers:1000000000:1500000000
+  qm_subgid:
+    containers:1000000000:1500000000
+
+pipelines: []

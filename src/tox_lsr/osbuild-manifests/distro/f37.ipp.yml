@@ -1,0 +1,19 @@
+version: '2'
+mpp-vars:
+  distro_name: f37
+  osname: f37
+  uefi_vendor: fedora
+  distro_version: 37
+  distro_minor_version: 0
+  distro_baseurl: http://mirrors.kernel.org/fedora/releases/$distro_version/Everything/$arch/os
+  distro_repos:
+  - id: fedora
+    baseurl: http://mirrors.kernel.org/fedora/releases/$distro_version/Everything/$arch/os
+  - id: updates
+    baseurl: http://mirrors.kernel.org/fedora/updates/$distro_version/Everything/$arch
+  distro_devel_repos: []
+  distro_debug_repos: []
+  distro_module_id: platform:$distro_name
+  kernel_package: kernel
+  release_rpm: fedora-release  # aka release_package
+  linux_firmware_rpm: linux-firmware

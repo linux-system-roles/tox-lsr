@@ -1,0 +1,101 @@
+version: '2'
+
+mpp-vars:
+  distro_name: cs9 # The default
+
+mpp-define-image:
+  size: $image_size
+  table:
+    uuid: $parttab_uuid
+    label: $partition_label
+    partitions:
+    - mpp-if: use_efipart
+      then:
+        id: efi
+        name: efi
+        start:
+          mpp-eval: "0 if partition_label == 'gpt' else 2048"
+        size: $efipart_size
+        type:
+          mpp-eval: "'C12A7328-F81F-11D2-BA4B-00A0C93EC93B' if partition_label == 'gpt' else 'ef'"
+        uuid: $efipart_uuid
+    - mpp-if: use_bootpart
+      then:
+        id: boot
+        name: boot
+        size: $bootpart_size
+        type:
+          mpp-eval: "'0FC63DAF-8483-4772-8E79-3D69D8477DE4' if partition_label == 'gpt' else '83'"
+        uuid: $bootpart_uuid
+    - mpp-if: use_aboot and use_abootpart
+      then:
+        id: boot_a
+        name: boot_a
+        size: $abootpart_size
+        type: 20117F86-E985-4357-B9EE-374BC1D8487D # Android boot v2
+        uuid: $abootpart_uuid_a
+        attrs:
+          mpp-eval: active_gpt_attrs
+    - mpp-if: use_aboot and use_abootpart
+      then:
+        id: boot_b
+        name: boot_b
+        size: $abootpart_size
+        type: 20117F86-E985-4357-B9EE-374BC1D8487D # Android boot v2
+        uuid: $abootpart_uuid_b
+        attrs:
+          mpp-eval: inactive_gpt_attrs
+    - id: root
+      name: root
+      type:
+        mpp-eval: "'0FC63DAF-8483-4772-8E79-3D69D8477DE4' if partition_label == 'gpt' else '83'"
+      uuid: $rootpart_uuid
+pipelines:
+- mpp-import-pipelines:
+    path: $distro_dir/$distro_name.ipp.yml
+- mpp-import-pipelines:
+    path: defaults.ipp.yml
+- mpp-import-pipelines:
+    path: target-$target.ipp.yml
+- mpp-import-pipelines:
+    path: arch-$arch.ipp.yml
+- mpp-import-pipelines:
+    path: computed-vars.ipp.yml # After including all snippets that may change the defaults, compute derived things
+- name: build
+  runner:
+    mpp-eval: build_runner
+  stages:
+  - type: org.osbuild.rpm
+    inputs:
+      packages:
+        type: org.osbuild.files
+        origin: org.osbuild.source
+        mpp-depsolve:
+          architecture: $arch
+          module-platform-id: $distro_module_id
+          baseurl: $distro_baseurl_repo
+          repos:
+            mpp-join:
+              - mpp-eval: distro_repos
+              - mpp-eval: extra_build_repos
+          packages:
+            mpp-join:
+              - mpp-eval: build_rpms
+              - mpp-eval: extra_build_rpms
+              - mpp-if: use_qm
+                then:
+                  - qm
+    options:
+      gpgkeys:
+      - mpp-eval: distro_gpg_keys
+      exclude:
+        docs: true
+  - type: org.osbuild.selinux
+    options:
+      file_contexts: etc/selinux/targeted/contexts/files/file_contexts
+      labels:
+        /usr/bin/cp: system_u:object_r:install_exec_t:s0
+        /usr/bin/tar: system_u:object_r:install_exec_t:s0
+
+- mpp-import-pipelines:
+    path: include/$qm_importfile.ipp.yml

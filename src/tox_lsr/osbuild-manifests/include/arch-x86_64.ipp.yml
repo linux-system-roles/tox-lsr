@@ -1,0 +1,23 @@
+version: '2'
+mpp-vars:
+  efiarch: x64
+  goarch: amd64
+  boot_rpms:
+    mpp-join:
+      - mpp-eval: boot_rpms
+      - - mpp-if: use_grub2
+          then: grub2-efi-x64
+  base_rpms:
+    mpp-join:
+      - mpp-eval: base_rpms
+      - - microcode_ctl
+  build_rpms:
+    mpp-join:
+      - mpp-eval: build_rpms
+      - mpp-if: use_grub2
+        then:
+        - grub2-efi-x64
+        - grub2-efi-x64-cdboot
+        - grub2-tools-efi
+        - shim-x64
+pipelines: []
