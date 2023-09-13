@@ -1,0 +1,73 @@
+version: '2'
+mpp-vars:
+  name: lsr
+  ssh_permit_root_login: true
+  # mkpasswd -m sha512sum the_password
+  root_password: $6$wj.kFDYpt.5Qi5R4$V0vLpJLmZu2G/gc5llsCTLM8C0KFb2ZUXiOyyFUVeZzpEA88d99iTayKbutE/zhxRAPRkubf.NvtsBdv/UxJm1
+  # https://pagure.io/fork/rmeggins/standard-test-roles/blob/master/f/inventory/standard-inventory-qcow2#_59
+  root_ssh_key: "AAAAB3NzaC1yc2EAAAADAQABAAABAQDUOtNJdBEXyKxBB898rdT54ULjMGuO6v4jLX\
+    mRsdRhR5Id/lKNc9hsdioPWUePgYlqML2iSV72vKQoVhkyYkpcsjr3zvBny9+5xej3\
+    +TBLoEMAm2hmllKPmxYJDU8jQJ7wJuRrOVOnk0iSNF+FcY/yaQ0owSF02Nphx47j2K\
+    Wc0IjGGlt4fl0fmHJuZBA2afN/4IYIIsEWZziDewVtaEjWV3InMRLllfdqGMllhFR+\
+    ed2hQz9PN2QcapmEvUR4UCy/mJXrke5htyFyHi8ECfyMMyYeHwbWLFQIve4CWix9qt\
+    ksvKjcetnxT+WWrutdr3c9cfIj/c0v/Zg/c4zETxtp"
+  lsr_packages:  # base packages required for lsr and ansible
+  - sudo # non-root access
+  - openssh-server  # ssh access
+  - python3  # Ansible basic requirement
+  - python3-rpm  # Ansible package module
+  - pam  # ssh server dep
+  - crypto-policies  # ssh server dep
+  lsr_testing_packages:  # testing packages required for lsr
+  - tar  # testing
+pipelines:
+- mpp-import-pipelines:
+    path: include/build.ipp.yml
+- name: rootfs
+  build: name:build
+  stages:
+  - type: org.osbuild.kernel-cmdline
+    options:
+      root_fs_uuid:
+        mpp-eval: rootfs_uuid
+      kernel_opts:
+        mpp-eval: ''' '' .join(kernel_opts)'
+  - type: org.osbuild.rpm
+    options:
+      gpgkeys:
+      - mpp-eval: distro_gpg_keys
+      disable_dracut: true
+      exclude:
+        docs: true
+    inputs:
+      packages:
+        type: org.osbuild.files
+        origin: org.osbuild.source
+        mpp-depsolve:
+          architecture: $arch
+          ignore-weak-deps: true
+          module-platform-id: $distro_module_id
+          baseurl: $distro_baseurl/BaseOS/$arch/os/
+          repos:
+            mpp-join:
+            - mpp-eval: image_repos
+            - mpp-eval: extra_repos
+            - []
+          packages:
+            mpp-join:
+            - mpp-eval: image_rpms
+            - mpp-eval: extra_rpms
+            - mpp-eval: lsr_packages
+            - mpp-eval: lsr_testing_packages
+          excludes:
+          - dracut-config-rescue
+  - type: org.osbuild.sshd.config
+    options:
+      config:
+        PermitRootLogin: true
+  - type: org.osbuild.systemd
+    options:
+      enabled_services:
+      - sshd.service
+- mpp-import-pipelines:
+    path: include/image.ipp.yml

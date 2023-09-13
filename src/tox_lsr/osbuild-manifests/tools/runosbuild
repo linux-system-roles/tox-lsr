@@ -1,0 +1,108 @@
+#!/bin/bash
+
+# This is a helper for the makefile rule to build a particular image
+# from the preprocessed json manifest. It is a shellscript rather
+# than just some make lines because some of the complexities just
+# are painful to do in make.
+#
+# Features:
+#
+# * Knows what target to export based on the extensions.
+# * Knows what the exported filename based on the extensions.
+# * Supports building natively or in a VM via osbuildvm.
+# * Runs only the minimal required commands as root, and
+#   chowns the resulting files to the user
+# * Supports exporting an extra ostree commit and pulling that
+#   into an existing repo.
+
+set -e
+
+DEST="$1"
+JSON="$2"
+TARGET="$3"
+IMAGETYPE="$4"
+ARCH="$5"
+EXTENSION="$6"
+
+# Map extension => export pipeline name
+declare -A EXPORT_BY_EXT
+EXPORT_BY_EXT[img]=image
+EXPORT_BY_EXT[oci.tar]=container
+EXPORT_BY_EXT[qcow2]=qcow2
+EXPORT_BY_EXT[repo]=ostree-commit
+EXPORT_BY_EXT[rootfs]=rootfs
+EXPORT_BY_EXT[ext4]=ext4
+EXPORT_BY_EXT[tar]=tar
+EXPORT_BY_EXT[aboot]=aboot
+
+# Map extension to name of exported file by pipeline
+declare -A EXPORT_FILE_BY_EXT
+EXPORT_FILE_BY_EXT[img]=disk.img
+EXPORT_FILE_BY_EXT[qcow2]=disk.qcow2
+EXPORT_FILE_BY_EXT[oci.tar]=container.tar
+EXPORT_FILE_BY_EXT[repo]=repo
+EXPORT_FILE_BY_EXT[rootfs]=
+EXPORT_FILE_BY_EXT[ext4]=rootfs.ext4
+EXPORT_FILE_BY_EXT[tar]=rootfs.tar
+EXPORT_FILE_BY_EXT[aboot]=images
+
+EXPORT=${EXPORT_BY_EXT[${EXTENSION}]}
+EXPORT_FILE=${EXPORT_FILE_BY_EXT[${EXTENSION}]}
+
+HOST_ARCH=$(arch)
+CURRENT_UIDGID="$(id -u):$(id -g)"
+
+if [ $ARCH == $HOST_ARCH -a $VM == 0 ]; then
+    SUDO="sudo"
+    OSBUILD="sudo osbuild"
+else
+    SUDO=
+    OSBUILD="osbuildvm/osbuildvm --arch=$ARCH"
+fi
+
+EXPORT_ARGS="--export $EXPORT"
+
+CHECKPOINT_ARGS=
+for CP in $CHECKPOINTS; do
+    CHECKPOINT_ARGS="${CHECKPOINT_ARGS} --checkpoint ${CP}"
+done
+
+CHOWNARGS=
+if [ $EXTENSION == repo -o $EXTENSION == aboot ]; then
+    CHOWNARGS=-R # Chown entire repo dir as it doesn't care about permissions
+fi
+
+EXPORTDIRS=$OUTPUTDIR/$EXPORT
+
+# If OSTREE_REPO is set, and we're building an image that has an
+# ostree commit, then we also export that commit to the repo specified
+# by OSTREE_REPO.
+ALSO_EXPORT_OSTREE=0
+if [ "$OSTREE_REPO" != "" -a "$IMAGETYPE" == "ostree" ]; then
+    ALSO_EXPORT_OSTREE=1
+    if [ $EXPORT != "ostree-commit" ]; then
+        EXPORT_ARGS="$EXPORT_ARGS --export ostree-commit"
+        EXPORTDIRS="$EXPORTDIRS $OUTPUTDIR/ostree-commit"
+    fi
+
+    # Ensure we have a repo to export to
+    ostree init --repo=$OSTREE_REPO --mode archive
+fi
+
+set -x
+
+$SUDO rm -rf $EXPORTDIRS
+mkdir -p $EXPORTDIRS # Own export dirs by user, not root
+
+$OSBUILD $CHECKPOINT_ARGS --store $STOREDIR --output-directory $OUTPUTDIR $EXPORT_ARGS $OSBUILD_ARGS $JSON
+
+if [ $ALSO_EXPORT_OSTREE == "1" ]; then
+    ostree pull-local --repo=$OSTREE_REPO $OUTPUTDIR/ostree-commit/repo
+fi
+
+# Extract and chown exported file
+rm -rf $DEST
+$SUDO chown $CHOWNARGS $CURRENT_UIDGID $OUTPUTDIR/$EXPORT/$EXPORT_FILE
+$SUDO mv $OUTPUTDIR/$EXPORT/$EXPORT_FILE $DEST
+
+$SUDO rm -rf $EXPORTDIRS

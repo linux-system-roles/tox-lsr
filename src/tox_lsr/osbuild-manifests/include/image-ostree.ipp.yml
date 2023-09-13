@@ -1,0 +1,362 @@
+version: '2'
+mpp-vars:
+  kernel_osbuild_tree: rootfs
+  use_ostree: true
+  use_compliance_mode:
+    mpp-if: name == 'developer'
+    then: true
+  image_rpms:
+    mpp-join:
+    - mpp-eval: base_rpms
+    - mpp-eval: locals().get('extra_image_rpms', [])
+    - mpp-eval: boot_rpms
+    - mpp-eval: locals().get('extra_boot_rpms', [])
+    - - nss-altfiles
+      - greenboot
+      - mpp-if: not use_aboot
+        then: greenboot-grub2
+      - greenboot-reboot
+      - greenboot-status
+      - mpp-if: not use_aboot
+        then: greenboot-rpm-ostree-grub2
+      - mpp-if: name == 'developer'
+        then: ostree-compliance-mode
+      - polkit # Needed by rpm-ostree upgrade (until fix for https://github.com/coreos/rpm-ostree/issues/3554 is in)
+pipelines:
+- name: build-keys
+  build: name:build
+  stages:
+  - mpp-if: use_composefs
+    then:
+      type: org.osbuild-auto.ostree.genkey
+      options:
+        publickey: /build-key.pub
+        secretkey: /build-key
+- name: ostree-tree
+  build: name:build
+  stages:
+    mpp-join:
+    - - type: org.osbuild.copy
+        inputs:
+          tree:
+            type: org.osbuild.tree
+            origin: org.osbuild.pipeline
+            references:
+            - name:rootfs
+          extra-tree:
+            type: org.osbuild.tree
+            origin: org.osbuild.pipeline
+            references:
+            - name:extra-tree-content
+        options:
+          paths:
+            mpp-join:
+              - - from: input://tree/
+                  to: tree:///
+              - mpp-eval: extra_tree_content
+      - mpp-if: use_composefs
+        then:
+          type: org.osbuild.copy
+          inputs:
+            tree:
+              type: org.osbuild.tree
+              origin: org.osbuild.pipeline
+              references:
+              - name:build-keys
+          options:
+            paths:
+              - from: input://tree/build-key.pub
+                to: tree:///etc/ostree/initramfs-root-binding.key
+      - type: org.osbuild.systemd
+        options:
+          enabled_services:
+          - mpp-if: not use_aboot
+            then: greenboot-grub2-set-counter.service
+          - mpp-if: not use_aboot
+            then: greenboot-grub2-set-success.service
+          - greenboot-healthcheck.service
+          - mpp-if: not use_aboot
+            then: greenboot-rpm-ostree-grub2-check-fallback.service
+          - greenboot-status.service
+          - greenboot-task-runner.service
+    - mpp-eval: image_extra_stages
+    - - type: org.osbuild.selinux
+        options:
+          file_contexts: etc/selinux/targeted/contexts/files/file_contexts
+      - type: org.osbuild.ostree.preptree
+        options:
+          etc_group_members:
+          - wheel
+          - docker
+          initramfs-args:
+            - "--lz4"
+            - mpp-if: dracut_add_modules
+              then: "--add"
+            - mpp-if: dracut_add_modules
+              then:
+                mpp-eval: "' '.join(dracut_add_modules)"
+            - mpp-if: dracut_omit_modules
+              then: "--omit"
+            - mpp-if: dracut_omit_modules
+              then:
+                mpp-eval: "' '.join(dracut_omit_modules)"
+            - mpp-if: dracut_filesystems
+              then: "--filesystems"
+            - mpp-if: dracut_filesystems
+              then:
+                mpp-eval: "' '.join(dracut_filesystems)"
+            - mpp-if: dracut_add_drivers
+              then: "--add-drivers"
+            - mpp-if: dracut_add_drivers
+              then:
+                mpp-eval: "' '.join(dracut_add_drivers)"
+            - mpp-if: dracut_install
+              then: "--install"
+            - mpp-if: dracut_install
+              then:
+                mpp-eval: "' '.join(dracut_install)"
+      - mpp-if: use_aboot
+        then:
+          type: org.osbuild-auto.aboot.conf
+          options:
+            pagesize:
+              mpp-if: "locals().get('aboot_pagesize',) != None"
+              then:
+                mpp-format-string: "{aboot_pagesize}"
+            kernel_offset:
+              mpp-if: "locals().get('aboot_kernel_offset') != None"
+              then:
+                mpp-format-string: "{aboot_kernel_offset}"
+            partition_a:
+              mpp-if: "locals().get('aboot_partition_a') != None"
+              then:
+                mpp-format-string: "{aboot_partition_a}"
+            partition_b:
+              mpp-if: "locals().get('aboot_partition_b') != None"
+              then:
+                mpp-format-string: "{aboot_partition_b}"
+            second_offset:
+              mpp-if: "locals().get('aboot_second_offset') != None"
+              then:
+                mpp-format-string: "{aboot_second_offset}"
+            tags_offset:
+              mpp-if: "locals().get('aboot_tags_offset') != None"
+              then:
+                mpp-format-string: "{aboot_tags_offset}"
+            base:
+              mpp-if: "locals().get('aboot_base') != None"
+              then:
+                mpp-format-string: "{aboot_base}"
+            dtb_file:
+              mpp-if: "locals().get('aboot_dtb_file') != None"
+              then:
+                mpp-format-string: "{aboot_dtb_file}"
+            preptree: true
+      - mpp-if: use_aboot
+        then:
+          type: org.osbuild-auto.aboot.update
+          options:
+            preptree: true
+            kernel:
+              mpp-if: use_debug
+              then:
+                mpp-eval: rpms['rootfs'][kernel_core_package].evra+'+debug'
+              else:
+                mpp-eval: rpms['rootfs'][kernel_core_package].evra
+- name: ostree-commit
+  build: name:build
+  stages:
+  - type: org.osbuild.ostree.init
+    options:
+      path: /repo
+  - type: org.osbuild.ostree.commit
+    inputs:
+      tree:
+        type: org.osbuild.tree
+        origin: org.osbuild.pipeline
+        references:
+        - name:ostree-tree
+    options:
+      ref:
+        mpp-eval: ostree_ref
+      os_version:
+        mpp-eval: ostree_os_version
+      parent:
+        mpp-if: ostree_ref in locals().get("ostree_parent_refs", {})
+        then:
+          mpp-eval: ostree_parent_refs[ostree_ref]
+  - mpp-if: use_composefs
+    then:
+      type: org.osbuild.copy
+      inputs:
+        tree:
+          type: org.osbuild.tree
+          origin: org.osbuild.pipeline
+          references:
+          - name:build-keys
+      options:
+        paths:
+          - from: input://tree/build-key.pub
+            to: tree:///repo/build-key.pub
+          - from: input://tree/build-key
+            to: tree:///repo/build-key
+  - mpp-if: use_composefs
+    then:
+      type: org.osbuild-auto.ostree.sign
+      options:
+        repo: repo
+        ref:
+          mpp-eval: ostree_ref
+        key: /repo/build-key
+- name: image-tree
+  build: name:build
+  stages:
+  - type: org.osbuild.ostree.init-fs
+  - type: org.osbuild.ostree.pull
+    options:
+      repo: /ostree/repo
+      remote:
+        mpp-eval: ostree_remote_name
+    inputs:
+      commits:
+        type: org.osbuild.ostree
+        origin: org.osbuild.pipeline
+        references:
+          name:ostree-commit:
+            ref:
+              mpp-eval: ostree_ref
+  - type: org.osbuild.ostree.os-init
+    options:
+      osname:
+        mpp-eval: osname
+  - type: org.osbuild.ostree.config
+    options:
+      repo: /ostree/repo
+      config:
+        sysroot:
+          mpp-if: use_aboot
+          then:
+            bootloader: aboot
+          else:
+            bootloader: none
+  - mpp-if: use_composefs
+    then:
+      type: org.osbuild-auto.ostree.config
+      options:
+        repo: /ostree/repo
+        config:
+          sysroot:
+            composefs: "true"
+  - type: org.osbuild.ostree.remotes
+    options:
+      repo: /ostree/repo
+      remotes:
+        - name:
+            mpp-eval: ostree_remote_name
+          url:
+            mpp-eval: ostree_repo_url
+  - type: org.osbuild.mkdir
+    options:
+      paths:
+      - path: /boot/efi
+        mode: 448
+  - type: org.osbuild.ostree.deploy
+    options:
+      osname:
+        mpp-eval: osname
+      ref:
+        mpp-eval: ostree_ref
+      remote:
+        mpp-eval: ostree_remote_name
+      mounts:
+      - /boot
+      - /boot/efi
+      rootfs:
+        label: root
+      kernel_opts:
+        mpp-eval: kernel_opts
+  - type: org.osbuild.ostree.fillvar
+    options:
+      deployment:
+        osname:
+          mpp-eval: osname
+        ref:
+          mpp-eval: ostree_ref
+  - type: org.osbuild.users
+    mounts:
+      - type: org.osbuild.ostree.deployment
+        name: ostree.deployment
+        options:
+          deployment:
+            osname:
+              mpp-eval: osname
+            ref:
+              mpp-eval: ostree_ref
+    options:
+      users:
+        root:
+          password:
+            mpp-eval: root_password
+          key:
+            mpp-eval: root_ssh_key
+  - type: org.osbuild.fstab
+    options:
+      ostree:
+        deployment:
+          osname:
+            mpp-eval: osname
+          ref:
+            mpp-eval: ostree_ref
+      filesystems:
+        mpp-eval: fstab
+  - type: org.osbuild.ostree.selinux
+    options:
+      deployment:
+        osname:
+          mpp-eval: osname
+        ref:
+          mpp-eval: ostree_ref
+  - mpp-if: use_aboot
+    then:
+      type: org.osbuild-auto.aboot.update
+      options:
+        mpp-if: use_debug
+        then:
+          kernel:
+            mpp-eval: rpms['rootfs'][kernel_core_package].evra+'+debug'
+        else:
+          kernel:
+            mpp-eval: rpms['rootfs'][kernel_core_package].evra
+  - mpp-if: use_compliance_mode
+    then:
+      type: org.osbuild-auto.ostree.config-compliance-mode
+      options:
+        deployment:
+          osname:
+            mpp-eval: osname
+          ref:
+            mpp-eval: ostree_ref
+      inputs:
+        commits:
+          type: org.osbuild.ostree
+          origin: org.osbuild.pipeline
+          references:
+            name:ostree-commit:
+              ref:
+                mpp-eval: ostree_ref
+  - mpp-if: use_grub2
+    then:
+      type: org.osbuild.grub2
+      options:
+        rootfs:
+          label: root
+        bootfs:
+          label: boot
+        uefi:
+          vendor:
+            mpp-eval: uefi_vendor
+          unified: true
+          install: true
+        legacy: false
+        write_defaults: false
+        greenboot: true

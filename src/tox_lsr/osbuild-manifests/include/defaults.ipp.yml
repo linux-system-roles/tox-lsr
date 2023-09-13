@@ -1,0 +1,455 @@
+version: '2'
+
+# This file is loaded early and sets all the default values for variables.
+# It will inherit variables set in the image manifest itself, so the
+# defaults only override variable if they are already unset.
+# After this loads, things like the per-arch, per-target and per image type
+# includes are loaded which can override these.
+
+mpp-vars:
+  default_target: qemu
+  default_image_type: ostree
+  default_ostree_ref: $distro_name/$arch/$target-$name
+  default_ostree_os_version: $distro_version
+  default_osname: centos
+  default_uefi_vendor: centos
+  default_kernel_package: kernel-automotive
+  default_kernel_version: ""
+  default_release_name: ""
+  default_release_package: centos-release-automotive
+  default_linux_firmware_rpm: linux-firmware-automotive
+  default_partition_label: gpt
+  default_extra_rpms: []
+  default_extra_build_rpms: []
+  default_extra_build_repos: []
+  default_extra_image_rpms: []
+  default_extra_repos: []
+  default_qm_extra_repos: []
+  default_qm_extra_rpms: []
+  default_target_repos: []
+  default_root_password: $6$xoLqEUz0cGGJRx01$H3H/bFm0myJPULNMtbSsOFd/2BnHqHkMD92Sfxd.EKM9hXTWSmELG8cf205l6dktomuTcgKGGtGDgtvHVXSWU.
+  default_guest_password: $6$xoLqEUz0cGGJRx01$H3H/bFm0myJPULNMtbSsOFd/2BnHqHkMD92Sfxd.EKM9hXTWSmELG8cf205l6dktomuTcgKGGtGDgtvHVXSWU.
+  default_guest_uid: 999
+  default_guest_gid: 999
+  default_root_ssh_key: ""
+  default_ssh_permit_root_login: false
+  default_image_size: '8589934592'
+  default_efipart_size: 204800
+  default_bootpart_size: 614400
+  default_abootpart_size: 131072 # 64M
+  default_active_gpt_attrs: # Default active setup for Qualcomm
+    - 48
+    - 49 # priority 0x3
+    - 50 # active
+    - 51
+    - 52
+    - 53 # remaining tries 0x7
+  default_inactive_gpt_attrs:  # Default inactive for Qualcomm
+    - 48 # priority 0x1
+    - 50 # active
+    - 51
+    - 52
+    - 53 # remaining tries 0x7
+  default_kernel_loglevel: 4
+  default_timezone: UTC
+  default_locale: en_US.UTF-8
+  default_use_grub2: true
+  default_use_abl: false
+  default_use_qm: false
+  default_use_hirte: false
+  default_use_aboot: false
+  default_use_abootpart: false
+  default_use_efipart: true
+  default_use_bootpart: true
+  default_use_ostree: false
+  default_image_uuid:
+    mpp-eval: (str(__import__('uuid').uuid4()))
+  default_use_composefs: false
+  default_build_runner: org.osbuild.centos9
+  static_uuids:
+    mpp-eval: locals().get('static_uuids', True)
+  default_rootfs_uuid:
+    mpp-eval: ('76a22bf4-f153-4541-b6c7-0332c0dfaeac' if static_uuids else str(__import__('uuid').uuid4()))
+  default_bootfs_uuid:
+    mpp-eval: ('156f0420-627b-4151-ae6f-fda298097515' if static_uuids else str(__import__('uuid').uuid4()))
+  default_parttab_uuid:
+    mpp-eval: ('d209c89e-ea5e-4fbd-b161-b461cce297e0' if static_uuids else str(__import__('uuid').uuid4()))
+  default_efipart_uuid:
+    mpp-eval: ('68b2905b-df3e-4fb3-80fa-49d1e773aa33' if static_uuids else str(__import__('uuid').uuid4()))
+  default_bootpart_uuid:
+    mpp-eval: ('61b2905b-df3e-4fb3-80fa-49d1e773aa32' if static_uuids else str(__import__('uuid').uuid4()))
+  default_abootpart_uuid_a:
+    mpp-eval: ('1dd3a986-997c-0c48-1d1b-b0d0399f3153' if static_uuids else str(__import__('uuid').uuid4()))
+  default_abootpart_uuid_b:
+    mpp-eval: ('45105095-3847-4657-51f2-2a0144550453' if static_uuids else str(__import__('uuid').uuid4()))
+  default_rootpart_uuid:
+    mpp-eval: ('6264d520-3fb9-423f-8ab8-7a0a8e3d3562' if static_uuids else str(__import__('uuid').uuid4()))
+  default_luks_uuid:
+    mpp-eval: ('aedd1eef-f24e-425e-a9f3-bb5a1c996a95' if static_uuids else str(__import__('uuid').uuid4()))
+  default_use_luks: false
+  use_luks:
+    mpp-eval: locals().get('use_luks', default_use_luks)
+  default_use_compliance_mode: false
+  use_compliance_mode:
+    mpp-eval: locals().get('use_compliance_mode', default_use_compliance_mode)
+  default_use_debug: false
+  use_debug:
+    mpp-eval: locals().get('use_debug', default_use_debug)
+  default_luks_use_integrity: false
+  default_luks_auto_unlock: false
+  luks_auto_unlock:
+    mpp-eval: locals().get('luks_auto_unlock', default_luks_auto_unlock)
+  default_use_efi_runtime: true
+  default_use_serial_console: true
+  default_serial_console:
+    mpp-if: arch == 'aarch64'
+    then: ttyAMA0
+    else: ttyS0
+  default_kernel_opts:
+  - libahci.ignore_sss=1 # Staggered spin-up
+  default_dracut_add_modules:
+      - base
+      - bash
+      - dracut-systemd
+      - fs-lib
+      - i18n
+      - kernel-modules
+      - kernel-modules-extra
+      - rootfs-block
+      - shutdown
+      - systemd
+      - systemd-initrd
+      - terminfo
+      - udev-rules
+      - usrmount
+  default_dracut_omit_modules:
+      - lunmask
+      - mdraid
+      - memstrack
+      - nss-softokn
+      - nvdimm
+      - resume
+      - terminfo
+  default_dracut_filesystems:
+      - vfat
+      - ext4
+  default_dracut_add_drivers: []
+  default_dracut_install: []
+  default_ostree_repo_url: http://10.0.2.100/
+  default_ostree_remote_name: auto-sig
+  default_luks_passphrase: password
+  default_container_cmd:
+    - "/usr/bin/bash"
+  default_container_entrypoint: []
+  default_extra_fstab: []
+  default_use_containers: false
+  default_containers_extra_store: /usr/share/containers/storage
+  default_qm_containers_extra_store: /usr/share/containers/storage
+  default_containers_transient_store: true
+  default_containers_read_only: true
+  default_tmp_is_tmpfs: true
+  default_image_extra_stages: []
+  default_image_enabled_services: []
+  default_image_masked_services: []
+  default_bluechi_nodename: "host"
+  default_bluechi_manager_host_ip: "127.0.0.1"
+  default_distro_dir: distro
+  default_distro_gpg_keys: ""
+  default_rootfs_verity: true
+  distro_gpg_keys:
+    mpp-eval: locals().get('distro_gpg_keys', default_distro_gpg_keys)
+  timestamp:
+    mpp-eval: (__import__('datetime').datetime.now().timestamp())
+  build_timestamp:
+    mpp-eval: (str(__import__('datetime').datetime.fromtimestamp(timestamp)))
+  target:
+    mpp-eval: locals().get('target', default_target)
+  image_type:
+    mpp-eval: locals().get('image_type', default_image_type)
+  kernel_package:
+    mpp-eval: locals().get('kernel_package', default_kernel_package)
+  kernel_version:
+    mpp-eval: locals().get('kernel_version', default_kernel_version)
+  linux_firmware_rpm:
+    mpp-eval: locals().get('linux_firmware_rpm', default_linux_firmware_rpm)
+  release_name:
+    mpp-eval: locals().get('release_name', default_release_name)
+  release_rpm:
+    mpp-eval: locals().get('release_rpm', default_release_package)
+  ostree_ref:
+    mpp-eval: locals().get('ostree_ref', default_ostree_ref)
+  ostree_os_version:
+    mpp-eval: locals().get('ostree_os_version', default_ostree_os_version)
+  osname:
+    mpp-eval: locals().get('osname', default_osname)
+  uefi_vendor:
+    mpp-eval: locals().get('uefi_vendor', default_uefi_vendor)
+  partition_label:
+    mpp-eval: locals().get('partition_label', default_partition_label)
+  extra_rpms:
+    mpp-eval: locals().get('extra_rpms', default_extra_rpms)
+  extra_image_rpms:
+    mpp-eval: locals().get('extra_image_rpms', default_extra_image_rpms)
+  extra_build_rpms:
+    mpp-eval: locals().get('extra_build_rpms', default_extra_build_rpms)
+  extra_build_repos:
+    mpp-eval: locals().get('extra_build_repos', default_extra_build_repos)
+  extra_repos:
+    mpp-eval: locals().get('extra_repos', default_extra_repos)
+  qm_extra_repos:
+    mpp-eval: locals().get('qm_extra_repos', default_qm_extra_repos)
+  qm_extra_rpms:
+    mpp-eval: locals().get('qm_extra_rpms', default_qm_extra_rpms)
+  target_repos:
+    mpp-eval: locals().get('target_repos', default_target_repos)
+  image_size:
+    mpp-eval: locals().get('image_size', default_image_size)
+  rootfs_uuid:
+    mpp-eval: locals().get('rootfs_uuid', default_rootfs_uuid)
+  bootfs_uuid:
+    mpp-eval: locals().get('bootfs_uuid', default_bootfs_uuid)
+  parttab_uuid:
+    mpp-eval: locals().get('parttab_uuid', default_parttab_uuid)
+  rootpart_uuid:
+    mpp-eval: locals().get('rootpart_uuid', default_rootpart_uuid)
+  bootpart_uuid:
+    mpp-eval: locals().get('bootpart_uuid', default_bootpart_uuid)
+  abootpart_uuid_a:
+    mpp-eval: locals().get('abootpart_a_uuid', default_abootpart_uuid_a)
+  abootpart_uuid_b:
+    mpp-eval: locals().get('abootpart_b_uuid', default_abootpart_uuid_b)
+  efipart_uuid:
+    mpp-eval: locals().get('efipart_uuid', default_efipart_uuid)
+  luks_uuid:
+    mpp-eval: locals().get('luks_uuid', default_luks_uuid)
+  kernel_opts:
+    mpp-eval: locals().get('kernel_opts', default_kernel_opts)
+  efipart_size:
+    mpp-eval: locals().get('efipart_size', default_efipart_size)
+  bootpart_size:
+    mpp-eval: locals().get('bootpart_size', default_bootpart_size)
+  abootpart_size:
+    mpp-eval: locals().get('abootpart_size', default_abootpart_size)
+  active_gpt_attrs:
+    mpp-eval: locals().get('active_gpt_attrs', default_active_gpt_attrs)
+  inactive_gpt_attrs:
+    mpp-eval: locals().get('inactive_gpt_attrs', default_inactive_gpt_attrs)
+  dracut_add_modules:
+    mpp-eval: locals().get('dracut_add_modules', default_dracut_add_modules)
+  dracut_omit_modules:
+    mpp-eval: locals().get('dracut_omit_modules', default_dracut_omit_modules)
+  dracut_filesystems:
+    mpp-eval: locals().get('dracut_filesystems', default_dracut_filesystems)
+  dracut_add_drivers:
+    mpp-eval: locals().get('dracut_add_drivers', default_dracut_add_drivers)
+  dracut_install:
+    mpp-eval: locals().get('dracut_install', default_dracut_install)
+  root_password:
+    mpp-eval: locals().get('root_password', default_root_password)
+  root_ssh_key:
+    mpp-eval: locals().get('root_ssh_key', default_root_ssh_key)
+  ssh_permit_root_login:
+    mpp-eval: locals().get('ssh_permit_root_login', default_ssh_permit_root_login)
+  guest_password:
+    mpp-eval: locals().get('guest_password', default_guest_password)
+  guest_gid:
+    mpp-eval: locals().get('guest_gid', default_guest_gid)
+  guest_uid:
+    mpp-eval: locals().get('guest_uid', default_guest_uid)
+  ostree_repo_url:
+    mpp-eval: locals().get('ostree_repo_url', default_ostree_repo_url)
+  ostree_remote_name:
+    mpp-eval: locals().get('ostree_remote_name', default_ostree_remote_name)
+  luks_passphrase:
+    mpp-eval: locals().get('luks_passphrase', default_luks_passphrase)
+  luks_use_integrity:
+    mpp-eval: locals().get('luks_use_integrity', default_luks_use_integrity)
+  use_efi_runtime:
+    mpp-eval: locals().get('use_efi_runtime', default_use_efi_runtime)
+  use_serial_console:
+    mpp-eval: locals().get('use_serial_console', default_use_serial_console)
+  serial_console:
+    mpp-eval: locals().get('serial_console', default_serial_console)
+  kernel_loglevel:
+    mpp-eval: locals().get('kernel_loglevel', default_kernel_loglevel)
+  locale:
+    mpp-eval: locals().get('locale', default_locale)
+  use_grub2:
+    mpp-eval: locals().get('use_grub2', default_use_grub2)
+  timezone:
+    mpp-eval: locals().get('timezone', default_timezone)
+  use_abl:
+    mpp-eval: locals().get('use_abl', default_use_abl)
+  use_qm:
+    mpp-eval: locals().get('use_qm', default_use_qm)
+  use_hirte:
+    mpp-eval: locals().get('use_hirte', default_use_hirte)
+  use_aboot:
+    mpp-eval: locals().get('use_aboot', default_use_aboot)
+  use_abootpart:
+    mpp-eval: locals().get('use_abootpart', default_use_abootpart)
+  use_efipart:
+    mpp-eval: locals().get('use_efipart', default_use_efipart)
+  use_bootpart:
+    mpp-eval: locals().get('use_bootpart', default_use_bootpart)
+  use_ostree:
+    mpp-eval: locals().get('use_ostree', default_use_ostree)
+  image_uuid:
+    mpp-eval: locals().get('image_uuid', default_image_uuid)
+  use_composefs:
+    mpp-eval: locals().get('use_composefs', default_use_composefs)
+  container_entrypoint:
+    mpp-eval: locals().get('container_entrypoint', default_container_entrypoint)
+  container_cmd:
+    mpp-eval: locals().get('container_cmd', default_container_cmd)
+  extra_fstab:
+    mpp-eval: locals().get('extra_fstab',  default_extra_fstab)
+  use_containers:
+    mpp-eval: locals().get('use_containers', default_use_containers)
+  containers_extra_store:
+    mpp-eval: locals().get('containers_extra_store', default_containers_extra_store)
+  qm_containers_extra_store:
+    mpp-eval: locals().get('qm_containers_extra_store', default_qm_containers_extra_store)
+  containers_transient_store:
+    mpp-eval: locals().get('containers_transient_store', default_containers_transient_store)
+  containers_read_only:
+    mpp-eval: locals().get('containers_read_only', default_containers_read_only)
+  tmp_is_tmpfs:
+    mpp-eval: locals().get('tmp_is_tmpfs', default_tmp_is_tmpfs)
+  image_extra_stages:
+    mpp-eval: locals().get('image_extra_stages',  default_image_extra_stages)
+  image_enabled_services:
+    mpp-eval: locals().get('image_enabled_services',  default_image_enabled_services)
+  image_masked_services:
+    mpp-eval: locals().get('image_masked_services',  default_image_masked_services)
+  bluechi_nodename:
+    mpp-eval: locals().get('bluechi_nodename',  default_bluechi_nodename)
+  bluechi_manager_host_ip:
+    mpp-eval: locals().get('bluechi_manager_host_ip',  default_bluechi_manager_host_ip)
+  build_runner:
+    mpp-eval: locals().get('build_runner',  default_build_runner)
+  distro_dir:
+    mpp-eval: locals().get('distro_dir',  default_distro_dir)
+  rootfs_verity:
+    mpp-eval: locals().get('rootfs_verity',  default_rootfs_verity)
+  centos_gpg_key: |
+    -----BEGIN PGP PUBLIC KEY BLOCK-----
+    Version: GnuPG v2.0.22 (GNU/Linux)
+
+    mQINBFzMWxkBEADHrskpBgN9OphmhRkc7P/YrsAGSvvl7kfu+e9KAaU6f5MeAVyn
+    rIoM43syyGkgFyWgjZM8/rur7EMPY2yt+2q/1ZfLVCRn9856JqTIq0XRpDUe4nKQ
+    8BlA7wDVZoSDxUZkSuTIyExbDf0cpw89Tcf62Mxmi8jh74vRlPy1PgjWL5494b3X
+    5fxDidH4bqPZyxTBqPrUFuo+EfUVEqiGF94Ppq6ZUvrBGOVo1V1+Ifm9CGEK597c
+    aevcGc1RFlgxIgN84UpuDjPR9/zSndwJ7XsXYvZ6HXcKGagRKsfYDWGPkA5cOL/e
+    f+yObOnC43yPUvpggQ4KaNJ6+SMTZOKikM8yciyBwLqwrjo8FlJgkv8Vfag/2UR7
+    JINbyqHHoLUhQ2m6HXSwK4YjtwidF9EUkaBZWrrskYR3IRZLXlWqeOi/+ezYOW0m
+    vufrkcvsh+TKlVVnuwmEPjJ8mwUSpsLdfPJo1DHsd8FS03SCKPaXFdD7ePfEjiYk
+    nHpQaKE01aWVSLUiygn7F7rYemGqV9Vt7tBw5pz0vqSC72a5E3zFzIIuHx6aANry
+    Gat3aqU3qtBXOrA/dPkX9cWE+UR5wo/A2UdKJZLlGhM2WRJ3ltmGT48V9CeS6N9Y
+    m4CKdzvg7EWjlTlFrd/8WJ2KoqOE9leDPeXRPncubJfJ6LLIHyG09h9kKQARAQAB
+    tDpDZW50T1MgKENlbnRPUyBPZmZpY2lhbCBTaWduaW5nIEtleSkgPHNlY3VyaXR5
+    QGNlbnRvcy5vcmc+iQI3BBMBAgAhBQJczFsZAhsDBgsJCAcDAgYVCAIJCgsDFgIB
+    Ah4BAheAAAoJEAW1VbOEg8ZdjOsP/2ygSxH9jqffOU9SKyJDlraL2gIutqZ3B8pl
+    Gy/Qnb9QD1EJVb4ZxOEhcY2W9VJfIpnf3yBuAto7zvKe/G1nxH4Bt6WTJQCkUjcs
+    N3qPWsx1VslsAEz7bXGiHym6Ay4xF28bQ9XYIokIQXd0T2rD3/lNGxNtORZ2bKjD
+    vOzYzvh2idUIY1DgGWJ11gtHFIA9CvHcW+SMPEhkcKZJAO51ayFBqTSSpiorVwTq
+    a0cB+cgmCQOI4/MY+kIvzoexfG7xhkUqe0wxmph9RQQxlTbNQDCdaxSgwbF2T+gw
+    byaDvkS4xtR6Soj7BKjKAmcnf5fn4C5Or0KLUqMzBtDMbfQQihn62iZJN6ZZ/4dg
+    q4HTqyVpyuzMXsFpJ9L/FqH2DJ4exGGpBv00ba/Zauy7GsqOc5PnNBsYaHCply0X
+    407DRx51t9YwYI/ttValuehq9+gRJpOTTKp6AjZn/a5Yt3h6jDgpNfM/EyLFIY9z
+    V6CXqQQ/8JRvaik/JsGCf+eeLZOw4koIjZGEAg04iuyNTjhx0e/QHEVcYAqNLhXG
+    rCTTbCn3NSUO9qxEXC+K/1m1kaXoCGA0UWlVGZ1JSifbbMx0yxq/brpEZPUYm+32
+    o8XfbocBWljFUJ+6aljTvZ3LQLKTSPW7TFO+GXycAOmCGhlXh2tlc6iTc41PACqy
+    yy+mHmSv
+    =kkH7
+    -----END PGP PUBLIC KEY BLOCK-----
+  redhat_gpg_key: |
+    -----BEGIN PGP PUBLIC KEY BLOCK-----
+
+    mQINBErgSTsBEACh2A4b0O9t+vzC9VrVtL1AKvUWi9OPCjkvR7Xd8DtJxeeMZ5eF
+    0HtzIG58qDRybwUe89FZprB1ffuUKzdE+HcL3FbNWSSOXVjZIersdXyH3NvnLLLF
+    0DNRB2ix3bXG9Rh/RXpFsNxDp2CEMdUvbYCzE79K1EnUTVh1L0Of023FtPSZXX0c
+    u7Pb5DI5lX5YeoXO6RoodrIGYJsVBQWnrWw4xNTconUfNPk0EGZtEnzvH2zyPoJh
+    XGF+Ncu9XwbalnYde10OCvSWAZ5zTCpoLMTvQjWpbCdWXJzCm6G+/hx9upke546H
+    5IjtYm4dTIVTnc3wvDiODgBKRzOl9rEOCIgOuGtDxRxcQkjrC+xvg5Vkqn7vBUyW
+    9pHedOU+PoF3DGOM+dqv+eNKBvh9YF9ugFAQBkcG7viZgvGEMGGUpzNgN7XnS1gj
+    /DPo9mZESOYnKceve2tIC87p2hqjrxOHuI7fkZYeNIcAoa83rBltFXaBDYhWAKS1
+    PcXS1/7JzP0ky7d0L6Xbu/If5kqWQpKwUInXtySRkuraVfuK3Bpa+X1XecWi24JY
+    HVtlNX025xx1ewVzGNCTlWn1skQN2OOoQTV4C8/qFpTW6DTWYurd4+fE0OJFJZQF
+    buhfXYwmRlVOgN5i77NTIJZJQfYFj38c/Iv5vZBPokO6mffrOTv3MHWVgQARAQAB
+    tDNSZWQgSGF0LCBJbmMuIChyZWxlYXNlIGtleSAyKSA8c2VjdXJpdHlAcmVkaGF0
+    LmNvbT6JAjYEEwECACAFAkrgSTsCGwMGCwkIBwMCBBUCCAMEFgIDAQIeAQIXgAAK
+    CRAZni+R/UMdUWzpD/9s5SFR/ZF3yjY5VLUFLMXIKUztNN3oc45fyLdTI3+UClKC
+    2tEruzYjqNHhqAEXa2sN1fMrsuKec61Ll2NfvJjkLKDvgVIh7kM7aslNYVOP6BTf
+    C/JJ7/ufz3UZmyViH/WDl+AYdgk3JqCIO5w5ryrC9IyBzYv2m0HqYbWfphY3uHw5
+    un3ndLJcu8+BGP5F+ONQEGl+DRH58Il9Jp3HwbRa7dvkPgEhfFR+1hI+Btta2C7E
+    0/2NKzCxZw7Lx3PBRcU92YKyaEihfy/aQKZCAuyfKiMvsmzs+4poIX7I9NQCJpyE
+    IGfINoZ7VxqHwRn/d5mw2MZTJjbzSf+Um9YJyA0iEEyD6qjriWQRbuxpQXmlAJbh
+    8okZ4gbVFv1F8MzK+4R8VvWJ0XxgtikSo72fHjwha7MAjqFnOq6eo6fEC/75g3NL
+    Ght5VdpGuHk0vbdENHMC8wS99e5qXGNDued3hlTavDMlEAHl34q2H9nakTGRF5Ki
+    JUfNh3DVRGhg8cMIti21njiRh7gyFI2OccATY7bBSr79JhuNwelHuxLrCFpY7V25
+    OFktl15jZJaMxuQBqYdBgSay2G0U6D1+7VsWufpzd/Abx1/c3oi9ZaJvW22kAggq
+    dzdA27UUYjWvx42w9menJwh/0jeQcTecIUd0d0rFcw/c1pvgMMl/Q73yzKgKYw==
+    =zbHE
+    -----END PGP PUBLIC KEY BLOCK-----
+
+    -----BEGIN PGP PUBLIC KEY BLOCK-----
+
+    mQINBFsy23UBEACUKSphFEIEvNpy68VeW4Dt6qv+mU6am9a2AAl10JANLj1oqWX+
+    oYk3en1S6cVe2qehSL5DGVa3HMUZkP3dtbD4SgzXzxPodebPcr4+0QNWigkUisri
+    XGL5SCEcOP30zDhZvg+4mpO2jMi7Kc1DLPzBBkgppcX91wa0L1pQzBcvYMPyV/Dh
+    KbQHR75WdkP6OA2JXdfC94nxYq+2e0iPqC1hCP3Elh+YnSkOkrawDPmoB1g4+ft/
+    xsiVGVy/W0ekXmgvYEHt6si6Y8NwXgnTMqxeSXQ9YUgVIbTpsxHQKGy76T5lMlWX
+    4LCOmEVomBJg1SqF6yi9Vu8TeNThaDqT4/DddYInd0OO69s0kGIXalVgGYiW2HOD
+    x2q5R1VGCoJxXomz+EbOXY+HpKPOHAjU0DB9MxbU3S248LQ69nIB5uxysy0PSco1
+    sdZ8sxRNQ9Dw6on0Nowx5m6Thefzs5iK3dnPGBqHTT43DHbnWc2scjQFG+eZhe98
+    Ell/kb6vpBoY4bG9/wCG9qu7jj9Z+BceCNKeHllbezVLCU/Hswivr7h2dnaEFvPD
+    O4GqiWiwOF06XaBMVgxA8p2HRw0KtXqOpZk+o+sUvdPjsBw42BB96A1yFX4jgFNA
+    PyZYnEUdP6OOv9HSjnl7k/iEkvHq/jGYMMojixlvXpGXhnt5jNyc4GSUJQARAQAB
+    tDNSZWQgSGF0LCBJbmMuIChhdXhpbGlhcnkga2V5KSA8c2VjdXJpdHlAcmVkaGF0
+    LmNvbT6JAjkEEwECACMFAlsy23UCGwMHCwkIBwMCAQYVCAIJCgsEFgIDAQIeAQIX
+    gAAKCRD3b2bD1AgnknqOD/9fB2ASuG2aJIiap4kK58R+RmOVM4qgclAnaG57+vjI
+    nKvyfV3NH/keplGNRxwqHekfPCqvkpABwhdGEXIE8ILqnPewIMr6PZNZWNJynZ9i
+    eSMzVuCG7jDoGyQ5/6B0f6xeBtTeBDiRl7+Alehet1twuGL1BJUYG0QuLgcEzkaE
+    /gkuumeVcazLzz7L12D22nMk66GxmgXfqS5zcbqOAuZwaA6VgSEgFdV2X2JU79zS
+    BQJXv7NKc+nDXFG7M7EHjY3Rma3HXkDbkT8bzh9tJV7Z7TlpT829pStWQyoxKCVq
+    sEX8WsSapTKA3P9YkYCwLShgZu4HKRFvHMaIasSIZWzLu+RZH/4yyHOhj0QB7XMY
+    eHQ6fGSbtJ+K6SrpHOOsKQNAJ0hVbSrnA1cr5+2SDfel1RfYt0W9FA6DoH/S5gAR
+    dzT1u44QVwwp3U+eFpHphFy//uzxNMtCjjdkpzhYYhOCLNkDrlRPb+bcoL/6ePSr
+    016PA7eEnuC305YU1Ml2WcCn7wQV8x90o33klJmEkWtXh3X39vYtI4nCPIvZn1eP
+    Vy+F+wWt4vN2b8oOdlzc2paOembbCo2B+Wapv5Y9peBvlbsDSgqtJABfK8KQq/jK
+    Yl3h5elIa1I3uNfczeHOnf1enLOUOlq630yeM/yHizz99G1g+z/guMh5+x/OHraW
+    iA==
+    =+Gxh
+    -----END PGP PUBLIC KEY BLOCK-----
+  build_rpms:
+    - dnf
+    - dosfstools
+    - e2fsprogs
+    - efibootmgr
+    - grub2-tools
+    - grub2-tools-minimal
+    - policycoreutils
+    - python3-iniparse
+    - python3
+    - rpm-ostree
+    - selinux-policy-targeted
+    - skopeo
+    - systemd
+    - tar
+    - xz
+  boot_rpms:
+    - dracut-config-generic
+    - grub2-tools-minimal
+    - lz4
+  base_rpms:
+    - NetworkManager
+    - e2fsprogs
+    - efibootmgr
+    - glibc-langpack-en
+    - hostname
+    - passwd
+    - rootfiles
+    - selinux-policy-targeted
+    - systemd-udev
+    - mpp-eval: release_rpm

@@ -1,0 +1,163 @@
+version: '2'
+mpp-vars:
+  kernel_osbuild_tree: rootfs
+  image_rpms:
+    mpp-join:
+    - mpp-eval: base_rpms
+    - mpp-eval: locals().get('extra_image_rpms', [])
+    - mpp-eval: boot_rpms
+    - mpp-eval: locals().get('extra_boot_rpms', [])
+    - - shim
+pipelines:
+- name: image-tree
+  build: name:build
+  stages:
+    mpp-join:
+    - - type: org.osbuild.copy
+        inputs:
+          tree:
+            type: org.osbuild.tree
+            origin: org.osbuild.pipeline
+            references:
+            - name:rootfs
+          extra-tree:
+            type: org.osbuild.tree
+            origin: org.osbuild.pipeline
+            references:
+            - name:extra-tree-content
+        options:
+          paths:
+            mpp-join:
+              - - from: input://tree/
+                  to: tree:///
+              - mpp-eval: extra_tree_content
+      - type: org.osbuild.users
+        options:
+          users:
+            root:
+              password:
+                mpp-eval: root_password
+              key:
+                mpp-eval: root_ssh_key
+    - mpp-eval: image_extra_stages
+    - - type: org.osbuild.dracut.conf
+        options:
+          filename: 90-image.conf
+          config:
+            early_microcode: false
+            reproducible: true
+            compress: lz4
+            add_dracutmodules:
+              mpp-if: dracut_add_modules
+              then:
+                mpp-eval: dracut_add_modules
+            omit_dracutmodules:
+              mpp-if: dracut_omit_modules
+              then:
+                mpp-eval: dracut_omit_modules
+            add_drivers:
+              mpp-if: dracut_add_drivers
+              then:
+                mpp-eval: dracut_add_drivers
+            filesystems:
+              mpp-if: dracut_filesystems
+              then:
+                mpp-eval: dracut_filesystems
+            install_items:
+              mpp-if: dracut_install
+              then:
+                mpp-eval: dracut_install
+      - type: org.osbuild.dracut
+        options:
+          mpp-if: use_debug
+          then:
+            kernel:
+            - mpp-eval: rpms['rootfs'][kernel_core_package].evra+"+debug"
+          else:
+            kernel:
+            - mpp-eval: rpms['rootfs'][kernel_core_package].evra
+      - type: org.osbuild.fstab
+        options:
+          filesystems:
+            mpp-eval: fstab
+      - mpp-if: use_grub2
+        then:
+          type: org.osbuild.grub2
+          options:
+            root_fs_uuid:
+              mpp-eval: rootfs_uuid
+            boot_fs_uuid:
+              mpp-eval: bootfs_uuid
+            kernel_opts:
+              mpp-eval: ''' '' .join(kernel_opts)'
+            uefi:
+              vendor:
+                mpp-eval: uefi_vendor
+              unified: true
+            legacy: false
+            write_defaults: false
+            greenboot: true
+    - mpp-if: use_aboot
+      then:
+        - type: org.osbuild-auto.aboot.conf
+          options:
+            pagesize:
+              mpp-if: "locals().get('aboot_pagesize',) != None"
+              then:
+                mpp-format-string: "{aboot_pagesize}"
+            kernel_offset:
+              mpp-if: "locals().get('aboot_kernel_offset') != None"
+              then:
+                mpp-format-string: "{aboot_kernel_offset}"
+            partition_a:
+              mpp-if: "locals().get('aboot_partition_a') != None"
+              then:
+                mpp-format-string: "{aboot_partition_a}"
+            partition_b:
+              mpp-if: "locals().get('aboot_partition_b') != None"
+              then:
+                mpp-format-string: "{aboot_partition_b}"
+            second_offset:
+              mpp-if: "locals().get('aboot_second_offset') != None"
+              then:
+                mpp-format-string: "{aboot_second_offset}"
+            tags_offset:
+              mpp-if: "locals().get('aboot_tags_offset') != None"
+              then:
+                mpp-format-string: "{aboot_tags_offset}"
+            base:
+              mpp-if: "locals().get('aboot_base') != None"
+              then:
+                mpp-format-string: "{aboot_base}"
+            dtb_file:
+              mpp-if: "locals().get('aboot_dtb_file') != None"
+              then:
+                mpp-format-string: "{aboot_dtb_file}"
+        - type: org.osbuild-auto.aboot.update
+          options:
+            mpp-if: use_debug
+            then:
+              kernel:
+                mpp-eval: rpms['rootfs'][kernel_core_package].evra+'+debug'
+            else:
+              kernel:
+                mpp-eval: rpms['rootfs'][kernel_core_package].evra
+        - type: org.osbuild.copy
+          inputs:
+            inlinefile:
+              type: org.osbuild.files
+              origin: org.osbuild.source
+              mpp-embed:
+                id: kernel-install.conf
+                text: layout=aboot
+          options:
+            paths:
+            - from:
+                mpp-format-string: input://inlinefile/{embedded['kernel-install.conf']}
+              to: tree:///usr/lib/kernel/install.conf
+    - - type: org.osbuild.fix-bls
+        options:
+          prefix: /
+      - type: org.osbuild.selinux
+        options:
+          file_contexts: etc/selinux/targeted/contexts/files/file_contexts

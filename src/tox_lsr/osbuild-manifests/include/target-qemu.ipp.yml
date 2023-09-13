@@ -1,0 +1,5 @@
+version: '2'
+mpp-vars:
+  extra_build_rpms:
+    - qemu-img
+pipelines: []

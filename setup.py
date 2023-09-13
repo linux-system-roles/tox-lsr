@@ -38,7 +38,8 @@ setup(
         "src/tox_lsr/test_scripts/lsr_ci_preinstall",
         "src/tox_lsr/test_scripts/lsr_ci_runtox",
     ],
-    package_data={"": ["config_files/*", "test_scripts/*"]},
+    package_data={"": ["config_files/*", "test_scripts/*",
+                       "osbuild-manifests/**"]},
     entry_points={
         "tox": ["lsr = tox_lsr.hooks"],
     },
