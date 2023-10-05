@@ -34,17 +34,25 @@ This shows that the `--lsr-enable` flag is available.
 - `shellcheck` test requires `shellcheck` package.
 On Fedora, you can install it with `dnf install shellcheck`, then you can test shell scripts with `tox -e shellcheck`.
 
-### Molecule and Ansible Version Support
+Several tests use `podman` - so `dnf install podman`
 
-As of August 30, 2021, system roles do not support the latest versions of
-molecule 3.x or later, which only support Ansible 3.x or later.  While it's
-possible that system roles will work with Ansible 3.x and later, there is some
-work that needs to be done to ensure that they are supportable and supported.
-Therefore, for now, molecule testing is disabled by default, and we will revisit
-this issue in the near future.
+QEMU tests have more requirements - see below `QEMU Testing`
+
+### Molecule and Ansible Version Support
 
 tox-lsr 2.0 and later use molecule v3, which support Ansible 2.8 and later.  If
 for some reason you need to support Ansible 2.7 or earlier, use tox-lsr 1.x.
+
+## Troubleshooting
+
+* Remove the `.tox` directory: `rm -rf .tox`
+* Remove all versions of `tox-lsr`: `pip uninstall tox-lsr` - repeat until all
+  versions are removed
+* Remove anything left over -
+  `rm -rf ~/.local/lib/python*/site-packages/tox_lsr*` and
+  `rm -rf ~/.local/lib/python*/site-packages/tox-lsr*`
+* Remove any cached files `rm -rf ~/.local/bin/__pycache__/*`
+* Reinstall `tox-lsr` - see above
 
 ## Example tox.ini
 
