@@ -14,7 +14,6 @@ mpp-vars:
   lsr_packages:  # base packages required for lsr and ansible
   - sudo # non-root access
   - openssh-server  # ssh access
-  - python3  # Ansible basic requirement
   - python3-rpm  # Ansible package module
   - pam  # ssh server dep
   - crypto-policies  # ssh server dep
