@@ -37,7 +37,7 @@ pipelines:
       - mpp-eval: distro_gpg_keys
       disable_dracut: true
       exclude:
-        docs: true
+        docs: false  # ssh requires man pages for testing
     inputs:
       packages:
         type: org.osbuild.files
