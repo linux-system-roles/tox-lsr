@@ -750,7 +750,11 @@ def split_args_and_playbooks(args_and_playbooks):
 def handle_vault(tests_dir, ansible_args, playbooks, test_env):
     """Handle Ansible Vault encrypted variables."""
     vault_pwd_file = os.path.abspath(os.path.join(tests_dir, "vault_pwd"))
-    logging.debug("handle_vault: tests_dir [%s] vault_pwd_file [%s]", tests_dir, vault_pwd_file)
+    logging.debug(
+        "handle_vault: tests_dir [%s] vault_pwd_file [%s]",
+        tests_dir,
+        vault_pwd_file,
+    )
     vault_variables_file = os.path.abspath(
         os.path.join(tests_dir, "vars", "vault-variables.yml")
     )
@@ -1533,7 +1537,9 @@ def get_arg_parser():
     parser.add_argument(
         "--make-batch",
         action="store_true",
-        default=bool(strtobool(os.environ.get("LSR_QEMU_MAKE_BATCH", "False"))),
+        default=bool(
+            strtobool(os.environ.get("LSR_QEMU_MAKE_BATCH", "False"))
+        ),
         help=(
             "Create a batch file from all of the tests/tests_*.yml and run it."
         ),
