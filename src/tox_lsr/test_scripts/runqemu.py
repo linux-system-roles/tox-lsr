@@ -863,6 +863,7 @@ def get_batches_from_playbooks_and_args(
 
 
 def make_batch_file(batch_file, tests_dir, ansible_args):
+    """Create a batch file from the tests_*.yml."""
     if tests_dir is None:
         tests_dir = "tests"
     tests = glob.glob(tests_dir + "/tests_*.yml")
