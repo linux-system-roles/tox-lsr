@@ -92,10 +92,12 @@ def is_ansible_env_var_supported(env_var_name):
         return True
     return False
 
+
 if is_ansible_env_var_supported("ANSIBLE_COLLECTIONS_PATH"):
     COLL_PATH_ENV_VAR = "ANSIBLE_COLLECTIONS_PATH"
 else:
     COLL_PATH_ENV_VAR = "ANSIBLE_COLLECTIONS_PATHS"
+
 
 def get_metadata_from_file(path, attr_key):
     """Get metadata from key attr_key in file at given path."""
@@ -1126,9 +1128,7 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
     )
     if not os.path.isdir(callback_plugin_dir):
         os.makedirs(callback_plugin_dir)
-    galaxy_env = {
-        COLL_PATH_ENV_VAR: os.environ["LSR_TOX_ENV_TMP_DIR"]
-    }
+    galaxy_env = {COLL_PATH_ENV_VAR: os.environ["LSR_TOX_ENV_TMP_DIR"]}
     debug_py = os.path.join(callback_plugin_dir, "debug.py")
     profile_py = os.path.join(callback_plugin_dir, "profile_tasks.py")
     if (pretty and not os.path.isfile(debug_py)) or (
