@@ -93,6 +93,12 @@ def is_ansible_env_var_supported(env_var_name):
     return False
 
 
+if is_ansible_env_var_supported("ANSIBLE_COLLECTIONS_PATH"):
+    COLL_PATH_ENV_VAR = "ANSIBLE_COLLECTIONS_PATH"
+else:
+    COLL_PATH_ENV_VAR = "ANSIBLE_COLLECTIONS_PATHS"
+
+
 def get_metadata_from_file(path, attr_key):
     """Get metadata from key attr_key in file at given path."""
     try:
@@ -925,7 +931,7 @@ def run_ansible_playbooks(  # noqa: C901
     if image_alias:
         test_env["TEST_HOSTALIASES"] = image_alias
     if collection_path:
-        test_env["ANSIBLE_COLLECTIONS_PATHS"] = collection_path
+        test_env[COLL_PATH_ENV_VAR] = collection_path
     if write_inventory:
         test_env["TEST_INVENTORY"] = write_inventory
     for batch in batches:
@@ -1073,7 +1079,7 @@ def install_requirements(sourcedir, collection_path, test_env, collection):
             force_flag = "--force"
     coll_rqf = os.path.join(sourcedir, "meta", "collection-requirements.yml")
     tests_rqf = os.path.join(sourcedir, "tests", "collection-requirements.yml")
-    galaxy_env = {"ANSIBLE_COLLECTIONS_PATHS": collection_path}
+    galaxy_env = {COLL_PATH_ENV_VAR: collection_path}
     for reqfile in [coll_rqf, tests_rqf]:
         if os.path.isfile(reqfile):
             ag_cmd = [
@@ -1094,7 +1100,7 @@ def install_requirements(sourcedir, collection_path, test_env, collection):
                 stderr=sys.stderr,
                 env=galaxy_env,
             )
-            test_env["ANSIBLE_COLLECTIONS_PATHS"] = collection_path
+            test_env[COLL_PATH_ENV_VAR] = collection_path
     if collection_save_file:
         subprocess.check_call(  # nosec
             [
@@ -1122,9 +1128,7 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
     )
     if not os.path.isdir(callback_plugin_dir):
         os.makedirs(callback_plugin_dir)
-    galaxy_env = {
-        "ANSIBLE_COLLECTIONS_PATHS": os.environ["LSR_TOX_ENV_TMP_DIR"]
-    }
+    galaxy_env = {COLL_PATH_ENV_VAR: os.environ["LSR_TOX_ENV_TMP_DIR"]}
     debug_py = os.path.join(callback_plugin_dir, "debug.py")
     profile_py = os.path.join(callback_plugin_dir, "profile_tasks.py")
     if (pretty and not os.path.isfile(debug_py)) or (

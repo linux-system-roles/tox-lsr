@@ -14,8 +14,17 @@ CONTAINER_SKIP_TAGS=${CONTAINER_SKIP_TAGS:---skip-tags tests::uses_selinux}
 CONTAINER_CONFIG="$HOME/.config/linux-system-roles.json"
 
 COLLECTION_BASE_PATH="${COLLECTION_BASE_PATH:-$TOX_WORK_DIR}"
-export ANSIBLE_COLLECTIONS_PATHS="${ANSIBLE_COLLECTIONS_PATHS:-$COLLECTION_BASE_PATH}"
 LOCAL_COLLECTION="${LOCAL_COLLECTION:-fedora/linux_system_roles}"
+
+is_ansible_env_var_supported() {
+    ansible-config list | grep -q "name: ${1}$"
+}
+
+if is_ansible_env_var_supported ANSIBLE_COLLECTIONS_PATH; then
+    export ANSIBLE_COLLECTIONS_PATH="${ANSIBLE_COLLECTIONS_PATH:-$COLLECTION_BASE_PATH}"
+else
+    export ANSIBLE_COLLECTIONS_PATHS="${ANSIBLE_COLLECTIONS_PATHS:-$COLLECTION_BASE_PATH}"
+fi
 
 logit() {
     local level
