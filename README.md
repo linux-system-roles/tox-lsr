@@ -292,7 +292,7 @@ environment variables:
 * `RUN_YAMLLINT_EXTRA_ARGS` - extra command line arguments to provide to
   yamllint
 * `RUN_ANSIBLE_LINT_EXTRA_ARGS` - extra command line arguments to provide to
-  ansible-lint
+  ansible-lint and ansible-lint-collection
 * `LSR_ROLE2COLL_VERSION` - a tag/commit of the lsr_role2collection script to
   use for the collection tox test.  The default is the latest stable version.
 * `LSR_ROLE2COLL_NAMESPACE` - namespace to use for the lsr_role2collection
@@ -382,6 +382,11 @@ workflow like this:
 This will convert your role to a collection, run `ansible-test` with only the
 `ansible-doc` test, and dump what the converted doc looks like, or dump errors
 if your doc could not be rendered correctly.
+
+To run `ansible-lint-collection` you must first convert to collection.
+```
+> tox -e collection,ansible-lint-collection
+```
 
 ### QEMU testing
 
