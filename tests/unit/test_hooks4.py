@@ -40,7 +40,7 @@ DEFAULT_INI = {
         "passenv": "*",
         "setenv": (
             "\nLC_ALL = C.UTF-8"
-            "\nLSR_ROLE2COLL_VERSION = master"
+            "\nLSR_ROLE2COLL_VERSION = main"
             "\nLSR_ROLE2COLL_NAMESPACE = fedora"
             "\nLSR_ROLE2COLL_NAME = linux_system_roles"
             "\nLSR_SCRIPTDIR = {lsr_scriptdir}"
@@ -69,7 +69,7 @@ TOX_INI_MISSING_TOX_SECTION_MERGED = {
         "passenv": "*",
         "setenv": (
             "\nLC_ALL = C.UTF-8"
-            "\nLSR_ROLE2COLL_VERSION = master"
+            "\nLSR_ROLE2COLL_VERSION = main"
             "\nLSR_ROLE2COLL_NAMESPACE = fedora"
             "\nLSR_ROLE2COLL_NAME = linux_system_roles"
             "\nLSR_SCRIPTDIR = ./scripts"
@@ -112,7 +112,7 @@ TOX_INI_OVERRIDE_DEFAULTS_MERGED = {
         "passenv": "*",
         "setenv": (
             "\nLC_ALL = C.UTF-8"
-            "\nLSR_ROLE2COLL_VERSION = master"
+            "\nLSR_ROLE2COLL_VERSION = main"
             "\nLSR_ROLE2COLL_NAMESPACE = fedora"
             "\nLSR_ROLE2COLL_NAME = linux_system_roles"
             "\nLSR_SCRIPTDIR = ./scripts"

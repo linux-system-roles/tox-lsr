@@ -12,7 +12,7 @@ SCRIPTDIR=$(readlink -f "$(dirname "$0")")
 
 # Collection commands that are run when `tox -e collection`:
 role=$(basename "${TOPDIR}")
-STABLE_TAG=${1:-master}
+STABLE_TAG=${1:-main}
 
 testlist="yamllint,flake8,shellcheck,ansible-plugin-scan"
 # py38 - pyunit testing is not yet supported
