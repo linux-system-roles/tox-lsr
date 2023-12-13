@@ -32,6 +32,7 @@ if [ "${LSR_ANSIBLE_TEST_DEBUG:-false}" = true ]; then
   ansible_test_filter() {
     cat
   }
+  set -x
 else
   default_v_arg=""
   ansible_test_filter() {
@@ -53,16 +54,6 @@ trap "rm -rf $dest_coll_dir" 0
 cp -a "$src_ac_dir" "$dest_coll_dir"
 
 cd "$dest_coll_dir/ansible_collections/$LSR_ROLE2COLL_NAMESPACE/$LSR_ROLE2COLL_NAME"
-
-if [ ! -d tests/sanity ]; then
-  mkdir -p tests/sanity
-fi
-# grab our ignore files
-for file in "$TOXINIDIR"/.sanity-ansible-ignore-*.txt; do
-  if [ -f "$file" ]; then
-    cp "$file" "tests/sanity/${file//*.sanity-ansible-}"
-  fi
-done
 
 if [ "${LSR_ANSIBLE_TEST_DOCKER:-false}" = true ]; then
   ansible-test sanity --docker 2>&1 | ansible_test_filter
