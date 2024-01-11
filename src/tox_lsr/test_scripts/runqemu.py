@@ -622,6 +622,7 @@ def run_ansible_container(
     last_rc=0,
     batch_rc=0,
 ):
+    """Run ansible in a container.  Optionally start the VM."""
     test_inventory = test_env.get("TEST_INVENTORY")
     # if inventory == test_inventory then assume the inventory has already
     # been switched from standard-inventory-qcow2 to the test inventory file
@@ -643,7 +644,9 @@ def run_ansible_container(
                 break
 
     # copy inventory to identity_dir
-    container_inventory = os.path.join(identity_dir, os.path.basename(test_inventory))
+    container_inventory = os.path.join(
+        identity_dir, os.path.basename(test_inventory)
+    )
     shutil.copy(test_inventory, container_inventory)
     # get all of the directories to mount into the container
     # os.getcwd() assumes running from the role root directory
@@ -705,9 +708,18 @@ def internal_run_ansible_playbooks(
     try:
         with file_or_stdout(log_file) as (stdout, stderr):
             if ansible_container:
-                run_ansible_container(test_env, inventory, ansible_args, playbooks,
-                                      cwd, ansible_container, stdout, stderr,
-                                      last_rc, batch_rc)
+                run_ansible_container(
+                    test_env,
+                    inventory,
+                    ansible_args,
+                    playbooks,
+                    cwd,
+                    ansible_container,
+                    stdout,
+                    stderr,
+                    last_rc,
+                    batch_rc,
+                )
             else:
                 subprocess.check_call(  # nosec
                     [
@@ -729,25 +741,6 @@ def internal_run_ansible_playbooks(
     finally:
         if wait_on_qemu:
             stop_qemu(test_env)
-
-
-def run_standard_inventory_qcow2(
-    test_env,
-    inventory,
-    cwd,
-    log_file=None,
-):
-    """Start a VM."""
-    with file_or_stdout(log_file) as (stdout, stderr):
-        subprocess.check_call(  # nosec
-            [
-                inventory,
-            ],
-            env=test_env,
-            cwd=cwd,
-            stdout=stdout,
-            stderr=stderr,
-        )
 
 
 def refresh_snapshot(
@@ -1021,7 +1014,11 @@ def run_ansible_playbooks(  # noqa: C901
         batch_report = "batch.report"
         make_batch_file(batch_file, tests_dir, ansible_args)
     batches = get_batches_from_playbooks_and_args(
-        ansible_args, playbooks, setup_yml, cleanup_yml, batch_file,
+        ansible_args,
+        playbooks,
+        setup_yml,
+        cleanup_yml,
+        batch_file,
     )
     batch_inventory = None
     rc = 0
@@ -1662,9 +1659,7 @@ def get_arg_parser():
     parser.add_argument(
         "--ansible-container",
         default=os.environ.get("LSR_QEMU_ANSIBLE_CONTAINER"),
-        help=(
-            "Run ansible from container instead of local venv."
-        ),
+        help=("Run ansible from container instead of local venv."),
     )
     return parser
 
