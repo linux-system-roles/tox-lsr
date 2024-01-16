@@ -392,21 +392,34 @@ To run `ansible-lint-collection` you must first convert to collection.
 
 Integration tests are run using qemu/kvm using the test playbooks in the
 `tests/` directory, using the `standard-inventory-qcow2` script to create a VM
-and an Ansible inventory. There are two test envs that can be used to run these
-tests:
-* `qemu` - tests against the latest version of ansible supported by the roles
-* `qemu-ansible-core-2.11` - tests against ansible-core 2.11
-* `qemu-ansible-core-2.12` - tests against ansible-core 2.12
-* `qemu-ansible-core-2.13` - tests against ansible-core 2.13
+and an Ansible inventory. There are several test envs that can be used to run
+these tests:
+* `qemu-ansible-2.9` - tests against ansible-2.9
+* `qemu-ansible-core-2.N` - tests against ansible-core 2.N
 
 These tests run in one of two modes, depending on which of the following
 arguments you provide.  Note that you must use `--` on the command line after
-the `-e qemu` or `-e qemu-ansible-core-2.x` so that `tox` will not attempt to
-interpret these as `tox` arguments:
+the `-e qemu-ansible-core-2.N` so that `tox` will not attempt to interpret these
+as `tox` arguments:
 ```
-tox -e qemu -- --image-name fedora-36 ...
+tox -e qemu-ansible-core-2.16 -- --image-name fedora-39 ...
 ```
 You must provide one of `--image-file` or `--image-name`.
+
+The values for `--image-name` come from the config file passed to the `--config`
+argument below.  The source of the config file is
+https://github.com/linux-system-roles/linux-system-roles.github.io/blob/main/download/linux-system-roles.json.
+For convenience, download this file to your `~/.config` directory:
+```
+curl -s -L -o ~/.config/linux-system-roles.json \
+https://raw.githubusercontent.com/linux-system-roles/linux-system-roles.github.io/main/download/linux-system-roles.json
+```
+
+NOTE: By default, `qemu-ansible-2.9` will run Ansible from an EL7 container
+using podman, because it is not possible to recreate the EL7 Ansible 2.9
+environment with modern Fedora and EL9+ tox venvs.  See below
+`--ansible-container`.  The container is built from `containers/Dockerfile` in
+the tox-lsr repo.
 
 * `--image-file` - this is the full path to a local qcow2 image file.  This
   assumes you have already downloaded the image to a local directory.  The
@@ -414,7 +427,7 @@ You must provide one of `--image-file` or `--image-name`.
 * `--image-name` - assuming you have a config file (`--config`) that maps the
   given image name to an image url and optional setup, you can just specify an
   image name like `--image-name fedora-36` and the script will download the
-  latest qcow2 compose image for Fedora 34 to a local cache (`--cache`).  The
+  latest qcow2 compose image for Fedora to a local cache (`--cache`).  The
   script will check to see if the downloaded image in the cache is the latest,
   and will not download if not needed.  In the config file you can specify
   additional setup steps to be run e.g. setting up additional dnf/yum repos.
@@ -534,18 +547,21 @@ You must provide one of `--image-file` or `--image-name`.
   environment variable is `LSR_QEMU_SSH_EL6`.
 * `--make-batch` - This tells runqemu to create a batch file from all of the
   files matching `tests/tests_*.yml` and run using this batch file.
+* `--ansible-container` - default is None. Run ansible from a container rather
+  than installing it and running it from a local tox venv.  The corresponding
+  environment variable is `LSR_QEMU_ANSIBLE_CONTAINER`.
 
 Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
 and playbooks, separate them with a `--` on the command line:
 ```
-tox -e qemu -- --image-name fedora-36 --become --become-user root -- tests_default.yml
+tox -e qemu-ansible-core-2.16 -- --image-name fedora-36 --become --become-user root -- tests_default.yml
 ```
 This is because `runqemu` cannot tell the difference between an Ansible argument
 and a playbook.  If you do not have any ansible-playbook arguments, only
 playbooks, you can omit the `--`:
 ```
-tox -e qemu -- --image-name fedora-36 tests_default.yml
+tox -e qemu-ansible-core-2.16 -- --image-name fedora-36 tests_default.yml
 ```
 If using `--collection`, it is assumed you used `tox -e collection` first.  Then
 specify the path to the test playbook inside this collection:
@@ -581,7 +597,7 @@ The config file looks like this:
 
 Example:
 ```
-tox -e qemu -- --image-name fedora-36 tests/tests_default.yml
+tox -e qemu-ansible-core-2.16 -- --image-name fedora-36 tests/tests_default.yml
 ```
 This will lookup `fedora-36` in your `~/.config/linux-system-roles.json`, will
 check if it needs to download a new image to `~/.cache/linux-system-roles`, will

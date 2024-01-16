@@ -610,12 +610,93 @@ def file_or_stdout(file_to_open, mode="a"):
             stdout.close()
 
 
+def run_ansible_container(
+    test_env,
+    inventory,
+    ansible_args,
+    playbooks,
+    cwd,
+    ansible_container,
+    stdout,
+    stderr,
+    last_rc=0,
+    batch_rc=0,
+):
+    """Run ansible in a container.  Optionally start the VM."""
+    test_inventory = test_env.get("TEST_INVENTORY")
+    # if inventory == test_inventory then assume the inventory has already
+    # been switched from standard-inventory-qcow2 to the test inventory file
+    # which means the VM should already have been started
+    if inventory != test_inventory:
+        # assumes inventory is standard-inventory-qcow2 - call this directly
+        # to start the VM and write the inventory to TEST_INVENTORY
+        subprocess.check_call(  # nosec
+            [inventory], env=test_env, cwd=cwd, stdout=stdout, stderr=stderr
+        )
+    # get the identity file directory
+    identity_dir = None
+    with open(test_inventory) as inv:
+        hsh = yaml.safe_load(inv)
+        for vals in hsh["all"]["children"]["localhost"]["hosts"].values():
+            if "ansible_ssh_private_key_file" in vals:
+                identity_file = vals["ansible_ssh_private_key_file"]
+                identity_dir = os.path.dirname(identity_file)
+                break
+
+    # copy inventory to identity_dir
+    container_inventory = os.path.join(
+        identity_dir, os.path.basename(test_inventory)
+    )
+    shutil.copy(test_inventory, container_inventory)
+    # get all of the directories to mount into the container
+    # os.getcwd() assumes running from the role root directory
+    role_dir = os.getcwd()
+    mounts = set((role_dir, identity_dir))
+    for pb in playbooks:
+        pb_dir = os.path.dirname(pb)
+        if os.path.commonpath([role_dir, pb_dir]) != role_dir:
+            mounts.add(pb_dir)
+    mounts_args = []
+    for mount in mounts:
+        mounts_args.append("-v")
+        mounts_args.append(mount + ":" + mount)
+
+    subprocess.check_call(  # nosec
+        [
+            "podman",
+            "run",
+            "--rm",
+            "--privileged",
+            "--net",
+            "host",
+            "--env-host",
+        ]
+        + mounts_args
+        + [
+            ansible_container,
+            "-vv",
+            "--inventory=" + container_inventory,
+            "-e",
+            "last_rc=" + str(last_rc),
+            "-e",
+            "batch_rc=" + str(batch_rc),
+        ]
+        + ansible_args
+        + playbooks,
+        env=test_env,
+        cwd=cwd,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
 def internal_run_ansible_playbooks(
     test_env,
     inventory,
     ansible_args,
     playbooks,
     cwd,
+    ansible_container,
     wait_on_qemu=False,
     log_file=None,
     last_rc=0,
@@ -626,23 +707,37 @@ def internal_run_ansible_playbooks(
         test_env["LOCK_ON_FILE"] = tempfile.NamedTemporaryFile().name
     try:
         with file_or_stdout(log_file) as (stdout, stderr):
-            subprocess.check_call(  # nosec
-                [
-                    "ansible-playbook",
-                    "-vv",
-                    "--inventory=" + inventory,
-                    "-e",
-                    "last_rc=" + str(last_rc),
-                    "-e",
-                    "batch_rc=" + str(batch_rc),
-                ]
-                + ansible_args
-                + playbooks,
-                env=test_env,
-                cwd=cwd,
-                stdout=stdout,
-                stderr=stderr,
-            )
+            if ansible_container:
+                run_ansible_container(
+                    test_env,
+                    inventory,
+                    ansible_args,
+                    playbooks,
+                    cwd,
+                    ansible_container,
+                    stdout,
+                    stderr,
+                    last_rc,
+                    batch_rc,
+                )
+            else:
+                subprocess.check_call(  # nosec
+                    [
+                        "ansible-playbook",
+                        "-vv",
+                        "--inventory=" + inventory,
+                        "-e",
+                        "last_rc=" + str(last_rc),
+                        "-e",
+                        "batch_rc=" + str(batch_rc),
+                    ]
+                    + ansible_args
+                    + playbooks,
+                    env=test_env,
+                    cwd=cwd,
+                    stdout=stdout,
+                    stderr=stderr,
+                )
     finally:
         if wait_on_qemu:
             stop_qemu(test_env)
@@ -658,6 +753,7 @@ def refresh_snapshot(
     cwd,
     post_snap_sleep_time,
     log_file,
+    ansible_container,
 ):
     """Create the snapshot if it is missing or too old."""
     need_refresh = False
@@ -718,6 +814,7 @@ def refresh_snapshot(
             ansible_args,
             setup_yml,
             cwd,
+            ansible_container,
             wait_on_qemu=True,
             log_file=log_file,
         )
@@ -823,9 +920,10 @@ def get_batches_from_playbooks_and_args(
     will be no setup playbooks for that batch.  Every playbook will be
     converted to the absolute path.
     """
-    batches = [Batch(None, ansible_args, playbooks, setup_yml)]
+    batches = []
+    batches.append(Batch(None, ansible_args, playbooks, setup_yml))
     if batch_file or cleanup_yml:
-        # for cleanup_yml, the strategy is to insert a one after each playbook
+        # for cleanup_yml, the strategy is to insert one after each playbook
         # in the batch, so that one or more cleanup playbooks are run after
         # each main playbook(s)
         if batch_file:
@@ -905,6 +1003,7 @@ def run_ansible_playbooks(  # noqa: C901
     log_file,
     tests_dir,
     make_batch,
+    ansible_container,
 ):
     """Run the given playbooks."""
     test_env.update(dict(os.environ))
@@ -915,12 +1014,16 @@ def run_ansible_playbooks(  # noqa: C901
         batch_report = "batch.report"
         make_batch_file(batch_file, tests_dir, ansible_args)
     batches = get_batches_from_playbooks_and_args(
-        ansible_args, playbooks, setup_yml, cleanup_yml, batch_file
+        ansible_args,
+        playbooks,
+        setup_yml,
+        cleanup_yml,
+        batch_file,
     )
     batch_inventory = None
     rc = 0
     batch_rc = 0
-    if batch_file or cleanup_yml:
+    if batch_file or cleanup_yml or ansible_container:
         if not write_inventory:
             batch_inventory = tempfile.NamedTemporaryFile(suffix=".yml").name
             write_inventory = batch_inventory
@@ -993,6 +1096,7 @@ def run_ansible_playbooks(  # noqa: C901
                 cwd,
                 post_snap_sleep_time,
                 local_log_file,
+                ansible_container,
             )
             playbooks = batch.playbooks
         else:
@@ -1010,6 +1114,7 @@ def run_ansible_playbooks(  # noqa: C901
                 batch.ansible_args,
                 playbooks,
                 cwd,
+                ansible_container,
                 wait_on_qemu,
                 local_log_file,
                 last_rc,
@@ -1219,6 +1324,7 @@ def runqemu(
     tests_dir=None,
     collection=False,
     make_batch=None,
+    ansible_container=None,
 ):
     """Download the image, set up, run playbooks."""
     if write_inventory:
@@ -1282,6 +1388,7 @@ def runqemu(
         log_file,
         tests_dir,
         make_batch,
+        ansible_container,
     )
 
 
@@ -1549,6 +1656,11 @@ def get_arg_parser():
             "Create a batch file from all of the tests/tests_*.yml and run it."
         ),
     )
+    parser.add_argument(
+        "--ansible-container",
+        default=os.environ.get("LSR_QEMU_ANSIBLE_CONTAINER"),
+        help=("Run ansible from container instead of local venv."),
+    )
     return parser
 
 
@@ -1606,6 +1718,7 @@ def main():
         tests_dir=args.tests_dir,
         collection=args.collection,
         make_batch=args.make_batch,
+        ansible_container=args.ansible_container,
     )
 
 
