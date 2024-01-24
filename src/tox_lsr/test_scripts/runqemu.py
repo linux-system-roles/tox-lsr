@@ -623,7 +623,7 @@ def run_ansible_container(
     batch_rc=0,
 ):
     """Run ansible in a container.  Optionally start the VM."""
-    test_inventory = test_env.get("TEST_INVENTORY")
+    test_inventory = test_env.get("TEST_INVENTORY", inventory)
     # if inventory == test_inventory then assume the inventory has already
     # been switched from standard-inventory-qcow2 to the test inventory file
     # which means the VM should already have been started
@@ -661,6 +661,13 @@ def run_ansible_container(
         mounts_args.append("-v")
         mounts_args.append(mount + ":" + mount)
 
+    if (
+        "ANSIBLE_COLLECTIONS_PATH" in test_env
+        and "ANSIBLE_COLLECTIONS_PATHS" not in test_env
+    ):
+        test_env["ANSIBLE_COLLECTIONS_PATHS"] = test_env[
+            "ANSIBLE_COLLECTIONS_PATH"
+        ]
     subprocess.check_call(  # nosec
         [
             "podman",
