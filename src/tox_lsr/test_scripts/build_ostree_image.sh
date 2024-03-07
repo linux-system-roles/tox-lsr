@@ -47,7 +47,16 @@ fi
 get_distro_ver "$image_name"
 
 if [ -f .ostree/get_ostree_data.sh ]; then
-    PKGS_JSON="$(.ostree/get_ostree_data.sh packages testing "$lsr_distro_ver" json)"
+    # read -d "" causes read to exit 1
+    read -r -d "" -a pkgs <<< "$(.ostree/get_ostree_data.sh packages testing "$lsr_distro_ver" raw)" || :
+    read -r -a extra_pkgs <<< "${LSR_EXTRA_PKGS:-}"
+    PKGS_JSON="["
+    comma=""
+    for pkg in "${pkgs[@]}" "${extra_pkgs[@]}"; do
+        PKGS_JSON="${PKGS_JSON}${comma}\"$pkg\""
+        comma=","
+    done
+    PKGS_JSON="${PKGS_JSON}]"
 fi
 
 if [ ! -f "$OSBUILD_DIR/distro/${osbuild_distro_ver}.ipp.yml" ]; then
@@ -56,5 +65,5 @@ fi
 make -C "$OSBUILD_DIR" BUILDDIR="$CACHE_DIR" OUTPUTDIR="$IMAGE_DIR" DESTDIR="$IMAGE_DIR" \
   "${osbuild_distro_ver}-qemu-lsr-ostree.x86_64.qcow2" \
   ${extra_distro:-} ${use_vm:-} \
-  DEFINES=extra_rpms="${PKGS_JSON}"
+  DEFINES=extra_rpms="${PKGS_JSON:-}"
 mv "$IMAGE_DIR/${osbuild_distro_ver}-qemu-lsr-ostree.x86_64.qcow2" "$IMAGE_FILE"
