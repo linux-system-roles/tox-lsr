@@ -778,6 +778,37 @@ TEST_USE_OVMF=true tox -e qemu-ansible-core-2.15 -- \
   --log-level debug tests/tests_default.yml
 ```
 
+#### Using a VM to build ostree images
+
+One of the issues with building ostree images is that you cannot (generally)
+build an image for a later release on an earlier OS.  For example, you cannot
+build a centos-9 image on a centos-8 machine, or if you can, it might not work
+properly.  tox-lsr provides the ability to use an intermediate VM to build the
+later VM.  You can use one of these environment variables:
+
+* `LSR_BUILD_IMAGE_USE_VM` - default is `false` - if true, build and run a VM
+  based on the default osbuildvm/osbuildvm.mpp.yml, and run the osbuild for your
+  target in this VM
+* `LSR_BUILD_IMAGE_VM_DISTRO_FILE` - this is the absolute path and file name of
+  an alternate osbuildvm.mpp.yml file that you want to use instead of the
+  default.
+
+Examples:
+
+```
+LSR_BUILD_IMAGE_USE_VM=true tox -e build_ostree_image -- centos-9
+```
+
+Will create a VM based on the default osbuildvm.mpp.yml, and use that to build
+the centos-9 image.
+
+```
+LSR_BUILD_IMAGE_VM_DISTRO_FILE=/path/to/my/osbuildvm.mpp.yml tox -e build_ostree_image -- centos-9
+```
+
+Will create a VM based on the given osbuildvm.mpp.yml, and use that to build the
+centos-9 image.
+
 #### .ostree directory
 
 `build_ostree_image` uses the role `.ostree` directory to determine which

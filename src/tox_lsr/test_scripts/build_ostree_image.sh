@@ -35,6 +35,15 @@ IMAGE_DIR="${IMAGE_DIR:-"$HOME/.cache/linux-system-roles"}"
 CACHE_DIR="${CACHE_DIR:-"$IMAGE_DIR/$image_name"}"
 IMAGE_FILE="${IMAGE_FILE:-"$IMAGE_DIR/${image_name}-ostree.qcow2"}"
 
+if [ "${LSR_BUILD_IMAGE_USE_VM:-false}" = true ] || \
+  [ -n "${LSR_BUILD_IMAGE_VM_DISTRO_FILE:-}" ]; then
+    if [ -n "${LSR_BUILD_IMAGE_VM_DISTRO_FILE:-}" ]; then
+        osbuildvm_mpp_yml="OSBUILDVM_MPP_YML=$LSR_BUILD_IMAGE_VM_DISTRO_FILE"
+    fi  # else use the default
+    make -C "$OSBUILD_DIR" BUILDDIR="$CACHE_DIR" OUTPUTDIR="$IMAGE_DIR" ${osbuildvm_mpp_yml:-} osbuildvm-images
+    use_vm=VM=1
+fi
+
 get_distro_ver "$image_name"
 
 if [ -f .ostree/get_ostree_data.sh ]; then
@@ -46,6 +55,6 @@ if [ ! -f "$OSBUILD_DIR/distro/${osbuild_distro_ver}.ipp.yml" ]; then
 fi
 make -C "$OSBUILD_DIR" BUILDDIR="$CACHE_DIR" OUTPUTDIR="$IMAGE_DIR" DESTDIR="$IMAGE_DIR" \
   "${osbuild_distro_ver}-qemu-lsr-ostree.x86_64.qcow2" \
-  ${extra_distro:-} \
+  ${extra_distro:-} ${use_vm:-} \
   DEFINES=extra_rpms="${PKGS_JSON}"
 mv "$IMAGE_DIR/${osbuild_distro_ver}-qemu-lsr-ostree.x86_64.qcow2" "$IMAGE_FILE"
