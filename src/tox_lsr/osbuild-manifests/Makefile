@@ -30,6 +30,7 @@ export OUTPUTDIR=$(BUILDDIR)/image_output
 IMAGEDIR=
 DESTDIR=.
 EXTRA_DISTRO=
+OSBUILDVM_MPP_YML=osbuildvm/osbuildvm.mpp.yml
 
 DISTROS := $(basename $(basename $(notdir f,$(wildcard distro/*.ipp.yml)))) $(if $(EXTRA_DISTRO),$(basename $(basename $(notdir $(EXTRA_DISTRO)))))
 MANIFESTS := $(wildcard images/*.mpp.yml) $(foreach DIR,$(IMAGEDIR),$(wildcard $(DIR)/*))
@@ -177,7 +178,7 @@ $(foreach m, $(MANIFESTS), $(eval $(call packages-rule,$m)))
 
 .PHONY: clean_downloads
 clean_downloads:
-	sudo rm -rf _build/osbuild_store/sources/org.osbuild.files/*
+	sudo rm -rf $(BUILDDIR)/osbuild_store/sources/org.osbuild.files/*
 
 .PHONY: clean_caches
 clean_caches:
@@ -192,7 +193,7 @@ clean: clean_downloads clean_caches
 
 ifeq ($(VM), 1)
 VM_SUDO=
-VM_OSBUILD="osbuildvm/osbuildvm --arch=$(HOST_ARCH)"
+VM_OSBUILD="osbuildvm/osbuildvm --image-dir=$(BUILDDIR) --arch=$(HOST_ARCH)"
 else
 VM_SUDO=sudo
 VM_OSBUILD=sudo osbuild
@@ -200,11 +201,11 @@ endif
 
 .PHONY: osbuildvm-images
 osbuildvm-images: $(BUILDDIR)
-	osbuild-mpp osbuildvm/osbuildvm.mpp.yml _build/osbuildvm-$(HOST_ARCH).json
-	$(VM_OSBUILD) --store $(STOREDIR) --output-directory $(OUTPUTDIR) --export osbuildvm _build/osbuildvm-$(HOST_ARCH).json
-	cp $(OUTPUTDIR)/osbuildvm/disk.qcow2 _build/osbuildvm-$(HOST_ARCH).img
-	cp $(OUTPUTDIR)/osbuildvm/initramfs _build/osbuildvm-$(HOST_ARCH).initramfs
-	cp $(OUTPUTDIR)/osbuildvm/vmlinuz _build/osbuildvm-$(HOST_ARCH).vmlinuz
+	$(OSBUILD_MPP) $(OSBUILDVM_MPP_YML) $(BUILDDIR)/osbuildvm-$(HOST_ARCH).json
+	$(VM_OSBUILD) --store $(STOREDIR) --output-directory $(OUTPUTDIR) --export osbuildvm $(BUILDDIR)/osbuildvm-$(HOST_ARCH).json
+	cp $(OUTPUTDIR)/osbuildvm/disk.qcow2 $(BUILDDIR)/osbuildvm-$(HOST_ARCH).img
+	cp $(OUTPUTDIR)/osbuildvm/initramfs $(BUILDDIR)/osbuildvm-$(HOST_ARCH).initramfs
+	cp $(OUTPUTDIR)/osbuildvm/vmlinuz $(BUILDDIR)/osbuildvm-$(HOST_ARCH).vmlinuz
 	$(VM_SUDO) rm -rf $(OUTPUTDIR)/osbuildvm
 
 %.aboot.simg : %.aboot

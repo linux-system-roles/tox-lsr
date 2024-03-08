@@ -51,13 +51,14 @@ EXPORT_FILE=${EXPORT_FILE_BY_EXT[${EXTENSION}]}
 
 HOST_ARCH=$(arch)
 CURRENT_UIDGID="$(id -u):$(id -g)"
+BUILDDIR="${BUILDDIR:-$(dirname "$STOREDIR")}"
 
 if [ $ARCH == $HOST_ARCH -a $VM == 0 ]; then
     SUDO="sudo"
     OSBUILD="sudo osbuild"
 else
     SUDO=
-    OSBUILD="osbuildvm/osbuildvm --arch=$ARCH"
+    OSBUILD="osbuildvm/osbuildvm --image-dir=$BUILDDIR --arch=$ARCH"
 fi
 
 EXPORT_ARGS="--export $EXPORT"

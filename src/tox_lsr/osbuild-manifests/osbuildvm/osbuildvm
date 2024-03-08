@@ -1,0 +1,397 @@
+#!/usr/bin/python3
+
+import argparse
+import json
+import os
+import platform
+import select
+import shlex
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+
+BLOCK_SIZE = 64*1024
+
+def read_manifest(path):
+    if path == "-":
+        manifest = sys.stdin.read()
+    else:
+        with open(path) as f:
+            manifest = f.read()
+
+    return manifest
+
+def parse_arguments(sys_argv):
+    parser = argparse.ArgumentParser(description="Build operating system images")
+
+    parser.add_argument("manifest_path", metavar="MANIFEST",
+                        help="json file containing the manifest that should be built, or a '-' to read from stdin")
+    parser.add_argument("--store", metavar="DIRECTORY", type=os.path.abspath,
+                        default=".osbuild",
+                        help="directory where intermediary os trees are stored")
+    parser.add_argument("--checkpoint", metavar="ID", action="append", type=str, default=None,
+                        help="stage to commit to the object store during build (can be passed multiple times)")
+    parser.add_argument("--export", metavar="ID", action="append", type=str, default=None,
+                        help="object to export, can be passed multiple times")
+    parser.add_argument("--output-directory", metavar="DIRECTORY", type=os.path.abspath,
+                        help="directory where result objects are stored")
+    parser.add_argument("--arch", metavar="ARCH", type=str, default=platform.machine(),
+                        help="Arch to build for")
+    parser.add_argument("--image-dir", metavar="DIRECTORY", type=os.path.abspath,
+                        default=None,
+                        help="directory where images are stored")
+
+    return parser.parse_args(sys_argv[1:])
+
+def local_osbuild(manifest, opts):
+    cmd = ['osbuild'] + opts + ['-']
+    try:
+        p = subprocess.run(cmd, check=True, input=manifest.encode("utf8"), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        print(e.output)
+        sys.exit(e.returncode)
+    lines = p.stdout.decode("utf8").splitlines()
+    checkpoints = {}
+    for l in lines:
+        p = l.split()
+        checkpoint = p[0][:-1]
+        checkpoints[checkpoint] = p[1]
+    return checkpoints
+
+def extract_dependencies(manifest):
+    j = json.loads(manifest)
+    version = j.get("version", None);
+    if version != '2':
+        print(f"Unsupported manifest version {version}, only version 2 supported")
+        sys.exit(1)
+    sources = j.get("sources", {});
+    curl = sources.get("org.osbuild.curl", {});
+    curl_items = curl.get("items", {});
+    shas = curl_items.keys()
+    return list(shas)
+
+def find_images(arch, image_dir):
+    base_image=f"osbuildvm-{arch}.img"
+    base_kernel=f"osbuildvm-{arch}.vmlinuz"
+    base_initrd=f"osbuildvm-{arch}.initramfs"
+
+    if image_dir is None:
+        image_dirs = [os.getcwd(), os.path.join(os.getcwd(), "_build"), "/usr/share/osbuildvm"]
+        for i in image_dirs:
+            if os.path.exists(os.path.join(i, base_image)):
+                image_dir = i
+                break
+        if not image_dir:
+            print(f"Unable to find {base_image}, tried: {image_dirs}", file=sys.stderr)
+            sys.exit(1)
+
+    image = os.path.join(image_dir, base_image)
+    kernel = os.path.join(image_dir, base_kernel)
+    initrd = os.path.join(image_dir, base_initrd)
+    return (image, kernel, initrd)
+
+def qemu_img(*args):
+    res = subprocess.run(["qemu-img"] + [*args],
+                         stdout=subprocess.PIPE,
+                         check=True)
+
+class QEmu(object):
+    def __init__(self, image1, image2, kernel, initrd, arch):
+        # This is where we store the sockets and the pidfile
+        self.tmpdir = tempfile.TemporaryDirectory(prefix="tmp-qemu-")
+        self.args = []
+        self.pid = 0
+        self.host_arch = platform.machine()
+        self.arch = arch
+
+        debug_serial = False
+
+        qemu_kvm_path = self.find_qemu()
+
+        self.args.append(qemu_kvm_path)
+
+        # Virtio serial ports
+
+        self.args.extend(["-device", "virtio-serial"])
+        out_socket_path = self.add_socket("output")
+        sync_socket_path = self.add_socket("sync")
+        stdout_socket_path = self.add_socket("stdout")
+
+        debug_cmdline="quiet loglevel=1"
+        if debug_serial:
+            self.args.extend(["-serial", "file:/dev/stdout"])
+            debug_cmdline=""
+
+        # Machine details
+        self.args.extend(["-m", "size=2G",
+                          "-nodefaults",
+                          "-vga", "none", "-vnc", "none"])
+
+        if self.kvm_supported():
+            self.args.extend(["-enable-kvm"])
+
+        if self.arch=="x86_64":
+            machine = "q35"
+            cpu = "qemu64"
+        if self.arch=="aarch64":
+            machine = "virt"
+            cpu = "cortex-a57"
+
+        if self.arch == self.host_arch:
+            cpu = "host"
+
+        self.args.extend(["-machine", machine,
+                          "-cpu", cpu])
+
+        if self.arch=="aarch64":
+            self.args.extend(["-bios", "/usr/share/edk2/aarch64/QEMU_EFI.fd",
+                              "-boot", "efi"])
+
+        pid_file = os.path.join(self.tmpdir.name, "qemu.pid")
+        self.args.extend(["-daemonize", "-pidfile" , pid_file,
+                          "-kernel", kernel,
+                          "-initrd", initrd,
+                          "-append", f'root=/dev/vda console=ttyS0 init=/usr/bin/start.sh {debug_cmdline} ro',
+                          "-drive", f"file={image1},index=0,media=disk,format=qcow2,snapshot=on,if=virtio",
+                          "-drive", f"file={image2},index=1,media=disk,format=raw,if=virtio"])
+
+        p = subprocess.run(self.args, check=True)
+
+        with open(pid_file, "r") as f:
+            self.pid = int(f.read())
+
+        self.sock_out = self.connect_socket(out_socket_path)
+        self.sock_sync = self.connect_socket(sync_socket_path)
+        self.sock_stdout = self.connect_socket(stdout_socket_path)
+
+    def connect_socket(self, path):
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.connect(path)
+        return sock
+
+    def add_socket(self, id):
+        socket_path = os.path.join(self.tmpdir.name, id + ".sock")
+        self.args.extend(["-chardev", f"socket,path={socket_path},server=on,wait=off,id={id}",
+                          "-device", f"virtserialport,chardev={id},name={id}"])
+        return socket_path
+
+    def find_qemu(self):
+        if self.arch == self.host_arch:
+            binary_name = "qemu-kvm"
+        else:
+            binary_name = f"qemu-system-{self.arch}"
+
+
+        for d in ["/usr/bin", "/usr/libexec"]:
+            p = os.path.join(d, binary_name)
+            if os.path.isfile(p):
+                return p
+
+        print(f"Can't find {binary_name}", file=sys.stderr)
+        sys.exit(1)
+
+    def kvm_supported(self):
+        return self.arch == self.host_arch and os.path.exists("/dev/kvm")
+
+    def copy_out(self, destination):
+        while True:
+            readable, writable, exceptional = select.select([self.sock_out, self.sock_sync, self.sock_stdout], [], [])
+
+            read_something = False
+
+            if self.sock_stdout in readable:
+                data = self.sock_stdout.recv(BLOCK_SIZE)
+                while len(data) > 0:
+                    res = sys.stdout.buffer.write(data)
+                    data = data[res:]
+                    sys.stdout.flush()
+                read_something = True
+
+            if self.sock_out in readable:
+                data = self.sock_out.recv(BLOCK_SIZE)
+                while len(data) > 0:
+                    res = destination.write(data)
+                    data = data[res:]
+                read_something = True
+
+            if read_something:
+                continue # Don't exit until there is no more to read from sock or sock_stdout
+
+            # If we had no buffered data in sock and sync_sock is readable that means we copied everything and can exit
+            if self.sock_sync in readable:
+                data = self.sock_sync.recv(BLOCK_SIZE)
+                break
+
+    def kill(self):
+        if self.pid != 0:
+            os.kill(self.pid, signal.SIGTERM)
+            self.pid = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.kill()
+        self.tmpdir.cleanup()
+
+def create_ext4_image(path, size, root_dir):
+    with open(path, "w") as f:
+            f.truncate(size)
+
+    cmd = ["mkfs.ext4", "-d", root_dir, "-E", "no_copy_xattrs,root_owner=0:0", "-O", "^has_journal", path]
+    try:
+        p = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except subprocess.CalledProcessError as e:
+        print(f"Unable to create ext4 work fs: {e}", file=sys.stderr)
+        sys.exit(e.returncode)
+
+def link_or_copy_file(source_path, dest_path):
+    try:
+        os.link(source_path, dest_path)
+    except Exception as e:
+        shutil.copyfile(source_path, dest_path, follow_symlinks=False)
+
+def make_work_rootfs(args, tmpdirname, manifest, digests, main_sh, checkpoint_ids):
+    rootdir = os.path.join(tmpdirname, "root")
+    os.makedirs(rootdir, exist_ok=True)
+
+    with open (os.open(os.path.join(rootdir, "main.sh"), os.O_CREAT | os.O_WRONLY, 0o775), "w") as mainsh:
+        mainsh.write(main_sh)
+
+    with open (os.path.join(rootdir, "image.json"), "w") as image_json:
+        image_json.write(manifest)
+
+    orig_sources_dir = os.path.join(args.store, "sources/org.osbuild.files")
+    root_sources_dir = os.path.join(rootdir, "osbuild_store/sources/org.osbuild.files")
+    os.makedirs(root_sources_dir, mode=0o777, exist_ok=True)
+    root_input_dir = os.path.join(rootdir, "input")
+    os.makedirs(root_input_dir, mode=0o777, exist_ok=True)
+
+    for digest in digests:
+        link_or_copy_file(os.path.join(orig_sources_dir, digest),
+                          os.path.join(root_sources_dir, digest))
+
+    for cp, cp_id in checkpoint_ids.items():
+        source_path = os.path.join(args.store, "refs_tars/" + cp_id + ".tar.gz")
+        if os.path.isfile(source_path):
+            link_or_copy_file(source_path,
+                              os.path.join(root_input_dir, cp_id + ".tar.gz"))
+
+    return rootdir
+
+# Moves any files recursively in root_src_dir to root_dst_dir, replacing if needed
+# Keeps old files and directories in root_dst_dir
+def move_merged(root_src_dir, root_dst_dir):
+    root_src_dir = os.path.abspath(root_src_dir)
+    root_dst_dir = os.path.abspath(root_dst_dir)
+    for src_dir, dirs, files in os.walk(root_src_dir):
+        dst_dir = src_dir.replace(root_src_dir, root_dst_dir, 1)
+        if not os.path.exists(dst_dir):
+            os.makedirs(dst_dir)
+        for file_ in files:
+            src_file = os.path.join(src_dir, file_)
+            dst_file = os.path.join(dst_dir, file_)
+            if os.path.exists(dst_file):
+                os.remove(dst_file)
+            shutil.move(src_file, dst_dir)
+
+def run_in_vm(args, manifest, digests, tmpdirname, shell_to_run, checkpoint_ids):
+    image,kernel,initrd = find_images(args.arch, args.image_dir)
+
+    rootdir = make_work_rootfs(args, tmpdirname, manifest, digests, shell_to_run, checkpoint_ids)
+    work_image = os.path.join(tmpdirname, "work.img")
+    create_ext4_image(work_image, 100*1024*1024*1024, rootdir)
+    shutil.rmtree(rootdir)
+
+    output_path = args.output_directory
+    os.makedirs(output_path, exist_ok=True)
+
+    exit_status = 1
+
+    with tempfile.TemporaryDirectory(prefix="download-", dir=output_path) as output_tmpdir:
+        with QEmu(image, work_image, kernel, initrd, args.arch) as qemu:
+            with subprocess.Popen(["tar", "x", "-C", output_tmpdir], stdin=subprocess.PIPE) as proc:
+                qemu.copy_out(proc.stdin)
+        exit_status_path = os.path.join(output_tmpdir, "exit_status")
+        if os.path.isfile(exit_status_path):
+            with open(exit_status_path, "r") as f:
+                exit_status = int(f.read())
+
+        # Move osbuild outout to the real output dir
+        osbuild_output = os.path.join(output_tmpdir, "osbuild")
+        if os.path.isdir(osbuild_output):
+            move_merged(osbuild_output, output_path)
+
+        checkpoints_output = os.path.join(output_tmpdir, "checkpoints")
+        checkpoints_dest = os.path.join(args.store, "refs_tars")
+        if os.path.isdir(checkpoints_output):
+            os.makedirs(checkpoints_dest, exist_ok=True)
+            for tar in os.listdir(checkpoints_output):
+                if not os.path.isfile(os.path.join(checkpoints_dest, tar)):
+                    shutil.move(os.path.join(checkpoints_output, tar),
+                                checkpoints_dest)
+
+    sys.exit(exit_status)
+
+def main():
+    args = parse_arguments(sys.argv)
+    manifest = read_manifest(args.manifest_path)
+
+    print("Running osbuild on host to download files")
+    checkpoint_ids = local_osbuild(manifest, ['--store', args.store])
+
+    digests = extract_dependencies(manifest)
+
+    mainsh_data = f'''\
+#!/bin/bash
+
+mkdir -p /work/osbuild_store
+(
+  echo === Extracting checkpoints in vm ===
+  for tar in $(find /work/input/ -mindepth 1 -print ); do
+    echo extracting $(basename $tar)
+    tar xf $tar  --acls --selinux --xattrs -C /work/osbuild_store
+  done
+  echo === Running osbuild in vm ===
+  osbuild --store /work/osbuild_store --output-directory /work/output/osbuild {' '.join(map(lambda e: "--export " + e, args.export))} {' '.join(map(lambda cp: "--checkpoint " + cp, args.checkpoint))} /work/image.json
+  RES=$?
+  echo $RES > /work/output/exit_status
+
+  echo === Osbuild exit status $RES ===
+
+  echo === Saving checkpoints ===
+  mkdir -p /work/output/checkpoints
+  for cp in $(find /work/osbuild_store/refs/ -mindepth 1 -printf "%f "); do
+    if test -f /work/input/$cp.tar.gz; then
+       continue
+    fi
+    obj=$(basename $(readlink /work/osbuild_store/refs/$cp))
+    tar cSf /work/output/checkpoints/$cp.tar.gz --acls --selinux --xattrs -C /work/osbuild_store/ refs/$cp objects/$obj
+    echo Saved $cp
+  done
+) > /dev/virtio-ports/stdout 2>&1
+
+tar cSf /dev/virtio-ports/output -C /work/output ./
+
+# Signal output ended
+sleep 3
+echo DONE > /dev/virtio-ports/sync
+
+# Block for it to be fully read
+cat /dev/virtio-ports/sync
+
+'''
+
+    tmpdir = os.path.join(args.store, "tmp")
+    os.makedirs(tmpdir, exist_ok=True)
+
+    with tempfile.TemporaryDirectory(prefix="osbuild-qemu-", dir=tmpdir) as tmpdirname:
+        run_in_vm(args, manifest, digests, tmpdirname, mainsh_data, checkpoint_ids)
+
+if __name__ == "__main__":
+    main()

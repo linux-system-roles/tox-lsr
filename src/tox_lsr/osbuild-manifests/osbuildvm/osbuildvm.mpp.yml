@@ -1,0 +1,229 @@
+version: '2'
+mpp-vars:
+  rootfs_uuid: 86a22bf4-f153-4541-b6c7-0332c0dfaead
+  rootfs_size: 2147483648
+  distro_baseurl: http://mirror.stream.centos.org/9-stream
+  distro_repos:
+  - id: baseos
+    baseurl: $distro_baseurl/BaseOS/$arch/os/
+  - id: appstream
+    baseurl: $distro_baseurl/AppStream/$arch/os/
+  distro_gpg_key: |
+    -----BEGIN PGP PUBLIC KEY BLOCK-----
+    Version: GnuPG v2.0.22 (GNU/Linux)
+
+    mQINBFzMWxkBEADHrskpBgN9OphmhRkc7P/YrsAGSvvl7kfu+e9KAaU6f5MeAVyn
+    rIoM43syyGkgFyWgjZM8/rur7EMPY2yt+2q/1ZfLVCRn9856JqTIq0XRpDUe4nKQ
+    8BlA7wDVZoSDxUZkSuTIyExbDf0cpw89Tcf62Mxmi8jh74vRlPy1PgjWL5494b3X
+    5fxDidH4bqPZyxTBqPrUFuo+EfUVEqiGF94Ppq6ZUvrBGOVo1V1+Ifm9CGEK597c
+    aevcGc1RFlgxIgN84UpuDjPR9/zSndwJ7XsXYvZ6HXcKGagRKsfYDWGPkA5cOL/e
+    f+yObOnC43yPUvpggQ4KaNJ6+SMTZOKikM8yciyBwLqwrjo8FlJgkv8Vfag/2UR7
+    JINbyqHHoLUhQ2m6HXSwK4YjtwidF9EUkaBZWrrskYR3IRZLXlWqeOi/+ezYOW0m
+    vufrkcvsh+TKlVVnuwmEPjJ8mwUSpsLdfPJo1DHsd8FS03SCKPaXFdD7ePfEjiYk
+    nHpQaKE01aWVSLUiygn7F7rYemGqV9Vt7tBw5pz0vqSC72a5E3zFzIIuHx6aANry
+    Gat3aqU3qtBXOrA/dPkX9cWE+UR5wo/A2UdKJZLlGhM2WRJ3ltmGT48V9CeS6N9Y
+    m4CKdzvg7EWjlTlFrd/8WJ2KoqOE9leDPeXRPncubJfJ6LLIHyG09h9kKQARAQAB
+    tDpDZW50T1MgKENlbnRPUyBPZmZpY2lhbCBTaWduaW5nIEtleSkgPHNlY3VyaXR5
+    QGNlbnRvcy5vcmc+iQI3BBMBAgAhBQJczFsZAhsDBgsJCAcDAgYVCAIJCgsDFgIB
+    Ah4BAheAAAoJEAW1VbOEg8ZdjOsP/2ygSxH9jqffOU9SKyJDlraL2gIutqZ3B8pl
+    Gy/Qnb9QD1EJVb4ZxOEhcY2W9VJfIpnf3yBuAto7zvKe/G1nxH4Bt6WTJQCkUjcs
+    N3qPWsx1VslsAEz7bXGiHym6Ay4xF28bQ9XYIokIQXd0T2rD3/lNGxNtORZ2bKjD
+    vOzYzvh2idUIY1DgGWJ11gtHFIA9CvHcW+SMPEhkcKZJAO51ayFBqTSSpiorVwTq
+    a0cB+cgmCQOI4/MY+kIvzoexfG7xhkUqe0wxmph9RQQxlTbNQDCdaxSgwbF2T+gw
+    byaDvkS4xtR6Soj7BKjKAmcnf5fn4C5Or0KLUqMzBtDMbfQQihn62iZJN6ZZ/4dg
+    q4HTqyVpyuzMXsFpJ9L/FqH2DJ4exGGpBv00ba/Zauy7GsqOc5PnNBsYaHCply0X
+    407DRx51t9YwYI/ttValuehq9+gRJpOTTKp6AjZn/a5Yt3h6jDgpNfM/EyLFIY9z
+    V6CXqQQ/8JRvaik/JsGCf+eeLZOw4koIjZGEAg04iuyNTjhx0e/QHEVcYAqNLhXG
+    rCTTbCn3NSUO9qxEXC+K/1m1kaXoCGA0UWlVGZ1JSifbbMx0yxq/brpEZPUYm+32
+    o8XfbocBWljFUJ+6aljTvZ3LQLKTSPW7TFO+GXycAOmCGhlXh2tlc6iTc41PACqy
+    yy+mHmSv
+    =kkH7
+    -----END PGP PUBLIC KEY BLOCK-----
+pipelines:
+- runner: org.osbuild.centos9
+  name: build
+  stages:
+  - type: org.osbuild.rpm
+    inputs:
+      packages:
+        type: org.osbuild.files
+        origin: org.osbuild.source
+        mpp-depsolve:
+          architecture: $arch
+          module-platform-id: platform:el9
+          baseurl: $distro_baseurl/BaseOS/$arch/os/
+          repos:
+            mpp-eval: distro_repos
+          packages:
+          - dnf
+          - e2fsprogs
+          - policycoreutils
+          - python3-iniparse
+          - python39
+          - qemu-img
+          - selinux-policy-targeted
+          - tar
+          - xz
+    options:
+      gpgkeys:
+      - mpp-eval: distro_gpg_key
+      exclude:
+        docs: true
+  - type: org.osbuild.selinux
+    options:
+      file_contexts: etc/selinux/targeted/contexts/files/file_contexts
+      labels:
+        /usr/bin/cp: system_u:object_r:install_exec_t:s0
+        /usr/bin/tar: system_u:object_r:install_exec_t:s0
+- name: rootfs
+  build: name:build
+  stages:
+  - type: org.osbuild.rpm
+    options:
+      gpgkeys:
+      - mpp-eval: distro_gpg_key
+    inputs:
+      packages:
+        type: org.osbuild.files
+        origin: org.osbuild.source
+        mpp-depsolve:
+          architecture: $arch
+          module-platform-id: platform:el9
+          baseurl: $distro_baseurl/BaseOS/$arch/os/
+          repos:
+            mpp-join:
+            - mpp-eval: distro_repos
+            - - id: osbuild
+                baseurl: https://download.copr.fedorainfracloud.org/results/@osbuild/osbuild/centos-stream-9-$arch
+          packages:
+          - bash
+          - dracut-config-generic
+          - kernel
+          - langpacks-en
+          - selinux-policy-targeted
+          - net-tools
+          - osbuild
+          - osbuild-tools
+          - osbuild-ostree
+          excludes:
+          - dracut-config-rescue
+  - type: org.osbuild.locale
+    options:
+      language: en_US.UTF-8
+  - type: org.osbuild.copy
+    inputs:
+      inlinefile:
+        type: org.osbuild.files
+        origin: org.osbuild.source
+        mpp-embed:
+          id: osbuilder.sh
+          text: |
+            #!/usr/bin/bash
+            function clean_up {
+              systemctl poweroff -f -f
+            }
+            trap clean_up EXIT
+            if grep -q "osbuilder_bash=1" /proc/cmdline; then bash; exit; fi
+            mount /dev/vdb /work
+            /work/main.sh
+    options:
+      paths:
+      - from:
+          mpp-format-string: input://inlinefile/{embedded['osbuilder.sh']}
+        to: tree:///usr/bin/start.sh
+  - type: org.osbuild.chmod
+    options:
+      items:
+        /usr/bin/start.sh:
+          mode: a+x
+  - type: org.osbuild.mkdir
+    options:
+      paths:
+        - path: /work
+  - type: org.osbuild.selinux
+    options:
+      file_contexts: etc/selinux/targeted/contexts/files/file_contexts
+  - type: org.osbuild.selinux
+    options:
+      file_contexts: etc/selinux/targeted/contexts/files/file_contexts
+- name: image
+  build: name:build
+  stages:
+  - type: org.osbuild.truncate
+    options:
+      filename: disk.img
+      size:
+        mpp-format-string: '{rootfs_size}'
+  - type: org.osbuild.mkfs.ext4
+    devices:
+      device:
+        type: org.osbuild.loopback
+        options:
+          filename: disk.img
+          start: 0
+          size:
+            mpp-eval: rootfs_size
+    options:
+      uuid:
+        mpp-eval: rootfs_uuid
+      label: root
+  - type: org.osbuild.copy
+    inputs:
+      tree:
+        type: org.osbuild.tree
+        origin: org.osbuild.pipeline
+        references:
+        - name:rootfs
+    options:
+      paths:
+      - from: input://tree/
+        to: mount://root/
+    devices:
+      root:
+        type: org.osbuild.loopback
+        options:
+          filename: disk.img
+          start: 0
+          size:
+            mpp-eval: rootfs_size
+    mounts:
+    - name: root
+      type: org.osbuild.ext4
+      source: root
+      target: /
+- name: osbuildvm
+  build: name:build
+  stages:
+  - type: org.osbuild.qemu
+    inputs:
+      image:
+        type: org.osbuild.files
+        origin: org.osbuild.pipeline
+        references:
+          name:image:
+            file: disk.img
+    options:
+      filename: disk.qcow2
+      format:
+        type: qcow2
+        compat: '1.1'
+  - type: org.osbuild.copy
+    inputs:
+      rootfs:
+        type: org.osbuild.tree
+        origin: org.osbuild.pipeline
+        references:
+        - name:rootfs
+    options:
+      paths:
+      - from:
+          mpp-format-string: input://rootfs/usr/lib/modules/{rpms['rootfs']['kernel-core'].evra}/vmlinuz
+        to: tree:///vmlinuz
+      - from:
+          mpp-format-string: input://rootfs/boot/initramfs-{rpms['rootfs']['kernel-core'].evra}.img
+        to: tree:///initramfs
+  - type: org.osbuild.chmod
+    options:
+      items:
+        /initramfs:
+          mode: a+r
