@@ -93,6 +93,29 @@ def is_ansible_env_var_supported(env_var_name):
     return False
 
 
+def is_ansible_cmd_line_option_supported(cmd, option):
+    """See if ansible or galaxy supports the given option --option."""
+    # cmd is a list e.g. ["ansible-galaxy", "collection", "install"]
+    result = subprocess.check_output(  # nosec
+        cmd + ["--help"], stderr=subprocess.STDOUT, encoding="utf-8"
+    )
+    # look for name: ENV_VAR_NAME in output
+    match = re.search(r" {} ".format(option), result)
+    if match:
+        return True
+    return False
+
+
+def get_galaxy_force_flag():
+    """Get flag to use to force collection reinstall."""
+    cmd = ["ansible-galaxy", "collection", "install"]
+    if is_ansible_cmd_line_option_supported(cmd, "--force-with-deps"):
+        return "--force-with-deps"
+    if is_ansible_cmd_line_option_supported(cmd, "--force"):
+        return "--force"
+    return ""
+
+
 if is_ansible_env_var_supported("ANSIBLE_COLLECTIONS_PATH"):
     COLL_PATH_ENV_VAR = "ANSIBLE_COLLECTIONS_PATH"
 else:
@@ -1165,7 +1188,6 @@ def run_ansible_playbooks(  # noqa: C901
 def install_requirements(sourcedir, collection_path, test_env, collection):
     """Install reqs from {meta,tests}/collection-requirements.yml, if any."""
     collection_save_file = None
-    force_flag = None
     if collection:
         save_collection = os.path.join(
             collection_path,
@@ -1188,7 +1210,6 @@ def install_requirements(sourcedir, collection_path, test_env, collection):
                     save_collection,
                 ]
             )
-            force_flag = "--force"
     coll_rqf = os.path.join(sourcedir, "meta", "collection-requirements.yml")
     tests_rqf = os.path.join(sourcedir, "tests", "collection-requirements.yml")
     galaxy_env = {COLL_PATH_ENV_VAR: collection_path}
@@ -1198,14 +1219,13 @@ def install_requirements(sourcedir, collection_path, test_env, collection):
                 "ansible-galaxy",
                 "collection",
                 "install",
+                get_galaxy_force_flag(),
                 "-p",
                 collection_path,
                 "-vv",
                 "-r",
                 reqfile,
             ]
-            if force_flag:
-                ag_cmd.append(force_flag)
             subprocess.check_call(  # nosec
                 ag_cmd,
                 stdout=sys.stdout,
@@ -1254,6 +1274,7 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
                 "-p",
                 os.environ["LSR_TOX_ENV_TMP_DIR"],
                 "-vv",
+                get_galaxy_force_flag(),
                 "ansible.posix",
             ],
             stdout=sys.stdout,
