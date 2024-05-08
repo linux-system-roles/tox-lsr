@@ -323,7 +323,10 @@ def get_url(image):
         return source
     elif compose_url:
         variant = image.get("variant")
-        image_urls = composeurl2images(compose_url, "x86_64", variant)
+        subvariant = image.get("subvariant")
+        image_urls = composeurl2images(
+            compose_url, "x86_64", variant, subvariant
+        )
         if len(image_urls) == 1:
             return image_urls[0]
         else:
