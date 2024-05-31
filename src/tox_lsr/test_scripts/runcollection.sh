@@ -48,6 +48,9 @@ cd "$coll_path"
 
 # these are for ansible-lint
 cp "$LSR_CONFIGDIR/collection_yamllint.yml" "$coll_path/.yamllint.yml"
+# remove the extends: from yamllint so that the defaults from ansible-lint
+# will be used
+sed -e '/^extends:/d' -i "$coll_path/.yamllint.yml"
 touch "$coll_path/CHANGELOG.md"
 if [ -f "$TOXINIDIR"/.ansible-lint ]; then
   cp "$TOXINIDIR"/.ansible-lint "$coll_path"
