@@ -1215,7 +1215,9 @@ def install_requirements(sourcedir, collection_path, test_env, collection):
             )
     coll_rqf = os.path.join(sourcedir, "meta", "collection-requirements.yml")
     tests_rqf = os.path.join(sourcedir, "tests", "collection-requirements.yml")
-    galaxy_env = {COLL_PATH_ENV_VAR: collection_path}
+    galaxy_env = {}
+    galaxy_env.update(dict(os.environ))
+    galaxy_env[COLL_PATH_ENV_VAR] = collection_path
     for reqfile in [coll_rqf, tests_rqf]:
         if os.path.isfile(reqfile):
             ag_cmd = [
@@ -1263,7 +1265,9 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
     )
     if not os.path.isdir(callback_plugin_dir):
         os.makedirs(callback_plugin_dir)
-    galaxy_env = {COLL_PATH_ENV_VAR: os.environ["LSR_TOX_ENV_TMP_DIR"]}
+    galaxy_env = {}
+    galaxy_env.update(dict(os.environ))
+    galaxy_env[COLL_PATH_ENV_VAR] = os.environ["LSR_TOX_ENV_TMP_DIR"]
     debug_py = os.path.join(callback_plugin_dir, "debug.py")
     profile_py = os.path.join(callback_plugin_dir, "profile_tasks.py")
     if (pretty and not os.path.isfile(debug_py)) or (
