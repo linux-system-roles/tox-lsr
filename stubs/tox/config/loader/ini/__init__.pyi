@@ -12,7 +12,7 @@ class IniLoader(Loader):
     _parser: ConfigParser
     core_section: Section
 
-    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-arguments,unknown-option-value,too-many-positional-arguments
     def __init__(
         self,
         section: Section,

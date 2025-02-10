@@ -5,15 +5,15 @@ mpp-vars:
   # mkpasswd -m sha512sum the_password
   root_password: $6$wj.kFDYpt.5Qi5R4$V0vLpJLmZu2G/gc5llsCTLM8C0KFb2ZUXiOyyFUVeZzpEA88d99iTayKbutE/zhxRAPRkubf.NvtsBdv/UxJm1
   # https://pagure.io/fork/rmeggins/standard-test-roles/blob/master/f/inventory/standard-inventory-qcow2#_59
-  root_ssh_key: "AAAAB3NzaC1yc2EAAAADAQABAAABgQDF6DLa+l+ikW2PbJ8v++ooNjOYrzCDm1MRnz"\
-    "cs283W6u/3BYq2fejQ3xvtyh8rhMbqWdL89XlWs8yjdVgIAAoK1zbqEOM8N8IB5wBR"\
-    "o7dTIvtsc9/dIOEXSSBX5W2T6hGA/G6S1bsOrEFFnGiqWo16T99tsr8eR2ytgqFwaO"\
-    "9XO3mn2cEVkh0N0u57ls5/maGFipdW9GzLLL9AfQgfJaok90ZLm+2V0Qs3guZEjE75"\
-    "vSRHf5I1+leTHfUUbj0U984DYqQ3oaWQYjqaBX4wQu9ITSHPDOQ0HPKK1QL+7ar1Cr"\
-    "PwBaetqh7CMNr0fQiBQpHzsn7Mqy4XjCSUSLu2y6t/QHw48vj8jtaIbkV9g0eZJ3IN"\
-    "2oxKxx5Im0bInR0HN2pEKNKTu0btuASJKENFQzTRYDLVLfGPNCHbhox05bc0yxjrAs"\
-    "ngh0KW+aiqAEl6ld0SDijew0OQsegtEVTY4UUG5ms1RMixKnrxRCZDd0XEtkY+UyEk"\
-    "8nEnXt1JJ97MgHU="
+  root_ssh_key: "AAAAB3NzaC1yc2EAAAADAQABAAABgQDF6DLa+l+ikW2PbJ8v++ooNjOYrzCDm1MRnz\
+    cs283W6u/3BYq2fejQ3xvtyh8rhMbqWdL89XlWs8yjdVgIAAoK1zbqEOM8N8IB5wBR\
+    o7dTIvtsc9/dIOEXSSBX5W2T6hGA/G6S1bsOrEFFnGiqWo16T99tsr8eR2ytgqFwaO\
+    9XO3mn2cEVkh0N0u57ls5/maGFipdW9GzLLL9AfQgfJaok90ZLm+2V0Qs3guZEjE75\
+    vSRHf5I1+leTHfUUbj0U984DYqQ3oaWQYjqaBX4wQu9ITSHPDOQ0HPKK1QL+7ar1Cr\
+    PwBaetqh7CMNr0fQiBQpHzsn7Mqy4XjCSUSLu2y6t/QHw48vj8jtaIbkV9g0eZJ3IN\
+    2oxKxx5Im0bInR0HN2pEKNKTu0btuASJKENFQzTRYDLVLfGPNCHbhox05bc0yxjrAs\
+    ngh0KW+aiqAEl6ld0SDijew0OQsegtEVTY4UUG5ms1RMixKnrxRCZDd0XEtkY+UyEk\
+    8nEnXt1JJ97MgHU="
   lsr_packages:  # base packages required for lsr and ansible
   - sudo # non-root access
   - openssh-server  # ssh access
