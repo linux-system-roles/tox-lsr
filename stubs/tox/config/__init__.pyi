@@ -18,7 +18,7 @@ testenvprefix: str
 class Parser(object):
     _testenv_attr: List[str]
 
-    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-arguments,unknown-option-value,too-many-positional-arguments
     def add_argument(
         self,
         name: str,
@@ -78,7 +78,7 @@ class Config(object):  # noqa: H238
     interpreters: List[str]
     _testenv_attr: List[str]
 
-    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-arguments,unknown-option-value,too-many-positional-arguments
     def __init__(
         self,
         pluginmanager: PluginManager,
