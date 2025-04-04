@@ -6,6 +6,7 @@ env:
 jobs:
   python:
     strategy:
+      fail-fast: false
       matrix:
         pyver_os:
           - ver: '2.7'
