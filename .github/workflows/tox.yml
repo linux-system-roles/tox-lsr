@@ -13,8 +13,6 @@ jobs:
             os: ubuntu-20.04
           - ver: '3.6'
             os: ubuntu-20.04
-          - ver: '3.8'
-            os: ubuntu-latest
           - ver: '3.9'
             os: ubuntu-latest
           - ver: '3.10'
