@@ -6,7 +6,34 @@
 import os
 from typing import TYPE_CHECKING, cast
 
-import pkg_resources
+try:
+    # Python >= 3.9
+    import importlib.resources
+
+    def resource_filename(pkg, ref):
+        # type: (str, str) -> str
+        """Get path of a resource."""
+        return str(importlib.resources.files(pkg) / ref)
+
+    def resource_bytes(pkg, ref):
+        # type: (str, str) -> bytes
+        """Get file bytes of a resource."""
+        return (importlib.resources.files(pkg) / ref).read_bytes()
+
+except ImportError:
+    # Python 2
+    import pkg_resources
+
+    def resource_filename(pkg, ref):
+        # type: (str, str) -> str
+        """Get path of a resource."""
+        return pkg_resources.resource_filename(pkg, ref)
+
+    def resource_bytes(pkg, ref):
+        # type: (str, str) -> bytes
+        """Get file bytes of a resource."""
+        return pkg_resources.resource_string(pkg, ref)
+
 
 if TYPE_CHECKING:
     from tox.config import Config, Parser
@@ -100,7 +127,7 @@ def get_lsr_scriptdir():
     lsr_scriptdir = os.environ.get(LSR_SCRIPTDIR_ENV)
     if not lsr_scriptdir:
         # pylint: disable=consider-using-f-string
-        lsr_script_filename = pkg_resources.resource_filename(
+        lsr_script_filename = resource_filename(
             __name__,
             "{tsdir}/{tsname}".format(
                 tsdir=TEST_SCRIPTS_SUBDIR,
@@ -118,7 +145,7 @@ def get_lsr_configdir():
     lsr_configdir = os.environ.get(LSR_CONFIGDIR_ENV)
     if not lsr_configdir:
         # pylint: disable=consider-using-f-string
-        lsr_config_filename = pkg_resources.resource_filename(
+        lsr_config_filename = resource_filename(
             __name__,
             "{cfdir}/{cfname}".format(
                 cfdir=CONFIG_FILES_SUBDIR,
@@ -134,7 +161,7 @@ def get_lsr_default():
     """Get the content of tox-default.ini."""
 
     # pylint: disable=consider-using-f-string
-    return pkg_resources.resource_string(
+    return resource_bytes(
         __name__,
         "{cfdir}/{deftox}".format(
             cfdir=CONFIG_FILES_SUBDIR,

@@ -16,8 +16,6 @@ except ImportError:
 
 from copy import deepcopy
 
-import pkg_resources
-
 # I have no idea why pylint complains about this.  This works:
 # command = python -c 'import py; print(dir(py.iniconfig))'
 # bug in pylint?  anyway, just ignore it
@@ -50,6 +48,7 @@ from tox_lsr.utils import (
     LSR_ENABLE,
     SCRIPT_NAME,
     TOX_DEFAULT_INI,
+    resource_bytes,
 )
 
 from .utils import MockConfig
@@ -62,10 +61,10 @@ class HooksTestCase(TestCase):
     def setUp(self):
         self.toxworkdir = tempfile.mkdtemp()
         patch(
-            "pkg_resources.resource_filename",
+            "tox_lsr.utils.resource_filename",
             return_value=self.toxworkdir + "/" + SCRIPT_NAME,
         ).start()
-        self.default_tox_ini_b = pkg_resources.resource_string(
+        self.default_tox_ini_b = resource_bytes(
             "tox_lsr", CONFIG_FILES_SUBDIR + "/" + TOX_DEFAULT_INI
         )
         self.default_tox_ini_raw = self.default_tox_ini_b.decode()
@@ -103,7 +102,7 @@ class HooksTestCase(TestCase):
         default_config = MockConfig(toxworkdir=self.toxworkdir)
 
         with patch(
-            "pkg_resources.resource_string",
+            "tox_lsr.utils.resource_bytes",
             return_value=self.default_tox_ini_b,
         ) as mock_rs:
             with patch("tox_lsr.hooks3.merge_config") as mock_mc:
