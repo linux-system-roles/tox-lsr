@@ -128,7 +128,7 @@ def get_lsr_scriptdir():
     if not lsr_scriptdir:
         # pylint: disable=consider-using-f-string
         lsr_script_filename = resource_filename(
-            __name__,
+            __package__,
             "{tsdir}/{tsname}".format(
                 tsdir=TEST_SCRIPTS_SUBDIR,
                 tsname=SCRIPT_NAME,
@@ -146,7 +146,7 @@ def get_lsr_configdir():
     if not lsr_configdir:
         # pylint: disable=consider-using-f-string
         lsr_config_filename = resource_filename(
-            __name__,
+            __package__,
             "{cfdir}/{cfname}".format(
                 cfdir=CONFIG_FILES_SUBDIR,
                 cfname=CONFIG_NAME,
@@ -162,7 +162,7 @@ def get_lsr_default():
 
     # pylint: disable=consider-using-f-string
     return resource_bytes(
-        __name__,
+        __package__,
         "{cfdir}/{deftox}".format(
             cfdir=CONFIG_FILES_SUBDIR,
             deftox=TOX_DEFAULT_INI,
