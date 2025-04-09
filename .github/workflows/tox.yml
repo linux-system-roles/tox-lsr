@@ -11,8 +11,7 @@ jobs:
         pyver_os:
           - ver: '2.7'
             os: ubuntu-22.04
-          - ver: '3.6'
-            os: ubuntu-20.04
+          # 3.6 gets tested in tox-py36.yml
           - ver: '3.9'
             os: ubuntu-latest
           - ver: '3.10'

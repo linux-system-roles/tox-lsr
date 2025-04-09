@@ -1,0 +1,24 @@
+name: tox
+on:  # yamllint disable-line rule:truthy
+  - pull_request
+permissions:
+  contents: read
+jobs:
+  py36:
+    runs-on: ubuntu-latest
+    container: registry.access.redhat.com/ubi8/ubi
+    steps:
+      - name: Set up Python 3.6 and pip
+        run: dnf install -y git-core python3-pip
+
+      - name: checkout PR
+        uses: actions/checkout@v4
+
+      - name: Install platform dependencies, python, tox
+        run: |
+          set -euxo pipefail
+          python3 -m pip install --upgrade pip
+          pip install -rtox-requirements.txt
+
+      - name: Run tox tests
+        run: tox -e py36,coveralls
