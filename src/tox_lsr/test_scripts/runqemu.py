@@ -17,10 +17,10 @@ import time
 import traceback
 
 try:
-    import urllib.parse
-    import urllib.request
+    from urllib.request import urlopen
 except ImportError:
-    import urllib
+    # Python 2
+    from urllib import urlopen
 from contextlib import contextmanager
 
 import yaml
@@ -149,12 +149,8 @@ def origurl(path):
 
 def get_metadata_from_url(url, metadata_key):
     """Get metadata from given url."""
-    try:
-        with urllib.request.urlopen(url) as url_response:  # nosec
-            return url_response.getheader(metadata_key)
-    except Exception:
-        with urllib.urlopen(url) as url_response:  # nosec
-            return url_response.getheader(metadata_key)
+    with urlopen(url) as url_response:  # nosec
+        return url_response.getheader(metadata_key)
 
 
 def get_inventory_script(inventory):
@@ -164,9 +160,7 @@ def get_inventory_script(inventory):
             os.environ["TOX_WORK_DIR"], "standard-inventory-qcow2"
         )
         try:
-            with urllib.request.urlopen(  # nosec
-                inventory  # nosec
-            ) as url_response:  # nosec
+            with urlopen(inventory) as url_response:  # nosec
                 with open(inventory_tempfile, "wb") as inf:
                     shutil.copyfileobj(url_response, inf)
             os.chmod(inventory_tempfile, 0o777)  # nosec
@@ -211,7 +205,7 @@ def fetch_image(url, cache, label):
 
         image_tempfile = tempfile.NamedTemporaryFile(dir=cache, delete=False)
         try:
-            request = urllib.request.urlopen(url)  # nosec
+            request = urlopen(url)  # nosec
             shutil.copyfileobj(request, image_tempfile)
             request.close()
         except Exception:  # pylint: disable=broad-except
@@ -292,7 +286,7 @@ def centoshtml2image(url, desiredarch):
         logging.error("Could not determine CentOS version from %s", url)
         return ""
 
-    page = urllib.request.urlopen(url)  # nosec
+    page = urlopen(url)  # nosec
     tree = BeautifulSoup(page.read(), "html.parser")
     imagelist = [
         td.a["href"]
