@@ -142,6 +142,24 @@ def image_source_last_modified_by_file_metadata(path):
     )
 
 
+@contextmanager
+def urlopen_retry(url):
+    """Retry opening url up to 5 times."""
+    for retry in range(1, 5):
+        try:
+            yield urlopen(url)
+            return
+        except IOError as e:
+            last_error = e
+            msg = str(e)
+            logging.warning(
+                "Opening %s failed, retry #%i: %s", url, retry, msg
+            )
+            time.sleep(retry * retry)
+
+    raise last_error
+
+
 def origurl(path):
     """Return the original URL that a given file was downloaded from."""
     return get_metadata_from_file(path, URL_XATTR)
@@ -149,7 +167,7 @@ def origurl(path):
 
 def get_metadata_from_url(url, metadata_key):
     """Get metadata from given url."""
-    with urlopen(url) as url_response:  # nosec
+    with urlopen_retry(url) as url_response:  # nosec
         return url_response.getheader(metadata_key)
 
 
@@ -160,7 +178,7 @@ def get_inventory_script(inventory):
             os.environ["TOX_WORK_DIR"], "standard-inventory-qcow2"
         )
         try:
-            with urlopen(inventory) as url_response:  # nosec
+            with urlopen_retry(inventory) as url_response:  # nosec
                 with open(inventory_tempfile, "wb") as inf:
                     shutil.copyfileobj(url_response, inf)
             os.chmod(inventory_tempfile, 0o777)  # nosec
@@ -205,9 +223,8 @@ def fetch_image(url, cache, label):
 
         image_tempfile = tempfile.NamedTemporaryFile(dir=cache, delete=False)
         try:
-            request = urlopen(url)  # nosec
-            shutil.copyfileobj(request, image_tempfile)
-            request.close()
+            with urlopen_retry(url) as request:  # nosec
+                shutil.copyfileobj(request, image_tempfile)
         except Exception:  # pylint: disable=broad-except
             logging.warning(traceback.format_exc())
             os.unlink(image_tempfile.name)
@@ -286,8 +303,8 @@ def centoshtml2image(url, desiredarch):
         logging.error("Could not determine CentOS version from %s", url)
         return ""
 
-    page = urlopen(url)  # nosec
-    tree = BeautifulSoup(page.read(), "html.parser")
+    with urlopen_retry(url) as page:  # nosec
+        tree = BeautifulSoup(page.read(), "html.parser")
     imagelist = [
         td.a["href"]
         for td in tree.find_all("td", class_="indexcolname")
