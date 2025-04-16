@@ -1010,11 +1010,15 @@ def get_batches_from_playbooks_and_args(
     return batches
 
 
-def make_batch_file(batch_file, tests_dir, ansible_args):
+def make_batch_file(
+    batch_file, tests_dir, ansible_args, make_batch_file_order
+):
     """Create a batch file from the tests_*.yml."""
     if tests_dir is None:
         tests_dir = "tests"
     tests = glob.glob(tests_dir + "/tests_*.yml")
+    if make_batch_file_order == "alphanum":
+        tests = sorted(tests)
     fmtstr = "--tests-dir {} --log-file {{}} ".format(tests_dir)
     for aarg in ansible_args:
         fmtstr = fmtstr + "{} ".format(aarg)
@@ -1048,6 +1052,7 @@ def run_ansible_playbooks(  # noqa: C901
     tests_dir,
     make_batch,
     ansible_container,
+    make_batch_file_order,
 ):
     """Run the given playbooks."""
     test_env.update(dict(os.environ))
@@ -1056,7 +1061,9 @@ def run_ansible_playbooks(  # noqa: C901
     if make_batch:
         batch_file = "batch.txt"
         batch_report = "batch.report"
-        make_batch_file(batch_file, tests_dir, ansible_args)
+        make_batch_file(
+            batch_file, tests_dir, ansible_args, make_batch_file_order
+        )
     batches = get_batches_from_playbooks_and_args(
         ansible_args,
         playbooks,
@@ -1371,6 +1378,7 @@ def runqemu(
     collection=False,
     make_batch=None,
     ansible_container=None,
+    make_batch_file_order=None,
 ):
     """Download the image, set up, run playbooks."""
     if write_inventory:
@@ -1435,6 +1443,7 @@ def runqemu(
         tests_dir,
         make_batch,
         ansible_container,
+        make_batch_file_order,
     )
 
 
@@ -1703,6 +1712,17 @@ def get_arg_parser():
         ),
     )
     parser.add_argument(
+        "--make-batch-file-order",
+        default=os.environ.get("LSR_QEMU_MAKE_BATCH_FILE_ORDER", ""),
+        choices=["alphanum", "natural"],
+        help=(
+            "The sort order for the tests/tests_*.yml files for make-batch.  "
+            "alphanum is en.US ASCII order.  "
+            "natural is the filesystem inode order.  "
+            "Implies --make-batch."
+        ),
+    )
+    parser.add_argument(
         "--ansible-container",
         default=os.environ.get("LSR_QEMU_ANSIBLE_CONTAINER"),
         help=("Run ansible from container instead of local venv."),
@@ -1734,6 +1754,10 @@ def main():
         args.post_snap_sleep_time = DEFAULT_POST_SNAP_SLEEP_TIME
     if not os.path.isdir(args.cache):
         os.makedirs(args.cache)
+    if args.make_batch_file_order:
+        args.make_batch = True
+    elif args.make_batch:
+        args.make_batch_file_order = "alphanum"
 
     prep_el6(args)
     image = get_image_config(args)
@@ -1765,6 +1789,7 @@ def main():
         collection=args.collection,
         make_batch=args.make_batch,
         ansible_container=args.ansible_container,
+        make_batch_file_order=args.make_batch_file_order,
     )
 
 
