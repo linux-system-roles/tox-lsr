@@ -16,6 +16,8 @@ CONTAINER_CONFIG="$HOME/.config/linux-system-roles.json"
 COLLECTION_BASE_PATH="${COLLECTION_BASE_PATH:-$TOX_WORK_DIR}"
 LOCAL_COLLECTION="${LOCAL_COLLECTION:-fedora/linux_system_roles}"
 
+BOOTC_MODE=
+
 is_ansible_env_var_supported() {
     ansible-config list | grep -q "name: ${1}$"
 }
@@ -119,18 +121,22 @@ setup_plugins() {
         fi
         export ANSIBLE_CALLBACK_PLUGINS="$callback_plugin_dir"
     fi
-    if [ -z "${ANSIBLE_CONNECTION_PLUGINS:-}" ] || [ ! -f "$ANSIBLE_CONNECTION_PLUGINS/podman.py" ]; then
+    local con_plugin
+    if [ -n "$BOOTC_MODE" ]; then
+        con_plugin="buildah.py"
+    else
+        con_plugin="podman.py"
+    fi
+    if [ -z "${ANSIBLE_CONNECTION_PLUGINS:-}" ] || [ ! -f "$ANSIBLE_CONNECTION_PLUGINS/$con_plugin" ]; then
         local connection_plugin_dir
         connection_plugin_dir="${ANSIBLE_CONNECTION_PLUGINS:-$TOX_WORK_DIR/connection_plugins}"
-        local podman_py
-        podman_py="$connection_plugin_dir/podman.py"
-        if [ ! -f "$podman_py" ]; then
+        if [ ! -f "$connection_plugin_dir/$con_plugin" ]; then
             ansible-galaxy collection install -p "$LSR_TOX_ENV_TMP_DIR" -vv containers.podman
             if [ ! -d "$connection_plugin_dir" ]; then
                 mkdir -p "$connection_plugin_dir"
             fi
-            mv "$LSR_TOX_ENV_TMP_DIR/ansible_collections/containers/podman/plugins/connection/podman.py" \
-                "$podman_py"
+            mv "$LSR_TOX_ENV_TMP_DIR/ansible_collections/containers/podman/plugins/connection/$con_plugin" \
+                "$connection_plugin_dir"
             rm -rf "$LSR_TOX_ENV_TMP_DIR/ansible_collections"
         fi
         export ANSIBLE_CONNECTION_PLUGINS="$connection_plugin_dir"
@@ -328,6 +334,11 @@ run_podman() {
     fi
 }
 
+run_buildah() {
+    container_id=$(buildah from --name "$1" "$CONTAINER_BASE_IMAGE")
+    CONTAINER_CLEANUP="buildah rm $container_id"
+}
+
 run_playbooks() {
     # shellcheck disable=SC2086
     local test_pb_base test_dir pb test_pbs
@@ -341,15 +352,22 @@ run_playbooks() {
         fi
     done
 
-    run_podman "$test_pb_base"
+    inv_file="$WORKDIR/inventory"
+
+    if [ -n "$BOOTC_MODE" ]; then
+        run_buildah "$test_pb_base"
+        # tmpdir hack: https://issues.redhat.com/browse/BIFROST-726
+        echo "sut ansible_host=$container_id ansible_connection=buildah ansible_remote_tmp=/tmp" > "$inv_file"
+    else
+        run_podman "$test_pb_base"
+        echo "sut ansible_host=$container_id ansible_connection=podman" > "$inv_file"
+    fi
 
     if [ -z "$container_id" ]; then
         error Failed to start container
         exit 1
     fi
 
-    inv_file="$WORKDIR/inventory"
-    echo "sut ansible_host=$container_id ansible_connection=podman" > "$inv_file"
     setup_vault "$test_dir" "${test_pb_base}.yml"
     pushd "$test_dir" > /dev/null
     if [ "$PARALLEL" -gt 0 ]; then
@@ -464,6 +482,10 @@ if [ -z "${LSR_DEBUG:-}" ]; then
     trap 'rm -rf "$WORKDIR"; ${CONTAINER_CLEANUP:-}' EXIT INT QUIT PIPE
 fi
 
+if [ "${CONTAINER_IMAGE_NAME%-bootc*}" != "$CONTAINER_IMAGE_NAME" ]; then
+    BOOTC_MODE=1
+fi
+
 CONTAINER_BASE_IMAGE=$(jq -r '.images[] | select(.name == "'"$CONTAINER_IMAGE_NAME"'") | .container' "$CONTAINER_CONFIG")
 if [ "${CONTAINER_BASE_IMAGE:-null}" = null ] ; then
     error container named "$CONTAINER_IMAGE_NAME" not found in "$CONTAINER_CONFIG"
@@ -471,24 +493,27 @@ if [ "${CONTAINER_BASE_IMAGE:-null}" = null ] ; then
 fi
 CONTAINER_IMAGE=${CONTAINER_IMAGE:-"lsr-test-$CONTAINER_IMAGE_NAME:latest"}
 
-if [ -z "${CONTAINER_ENTRYPOINT:-}" ]; then
-    case "$CONTAINER_IMAGE_NAME" in
-    *-6) CONTAINER_ENTRYPOINT=/sbin/init ;;
-    *) CONTAINER_ENTRYPOINT=/usr/sbin/init ;;
-    esac
-fi
-
 echo ::group::install collection requirements
 install_requirements
 echo ::endgroup::
 echo ::group::install and configure plugins used by tests
 setup_plugins
 echo ::endgroup::
-echo ::group::setup and prepare test container
-if ! refresh_test_container "$ERASE_OLD_SNAPSHOT"; then
-    exit 1
+
+if [ -z "$BOOTC_MODE" ]; then
+    echo ::group::setup and prepare test container
+    if [ -z "${CONTAINER_ENTRYPOINT:-}" ]; then
+        case "$CONTAINER_IMAGE_NAME" in
+        *-6) CONTAINER_ENTRYPOINT=/sbin/init ;;
+        *) CONTAINER_ENTRYPOINT=/usr/sbin/init ;;
+        esac
+    fi
+
+    if ! refresh_test_container "$ERASE_OLD_SNAPSHOT"; then
+        exit 1
+    fi
+    echo ::endgroup::
 fi
-echo ::endgroup::
 
 declare -A cur_jobs=()
 declare -A log_files=()
