@@ -283,31 +283,16 @@ setup_vault() {
     fi
 }
 
-run_playbooks() {
-    # shellcheck disable=SC2086
-    local test_pb_base test_dir pb test_pbs
-    test_pbs=()
-    test_pb_base="$1"; shift
-    for pb in "$@"; do
-        pb="$(realpath "$pb")"
-        test_pbs+=("$pb")
-        if [ -z "${test_dir:-}" ]; then
-            test_dir="$(dirname "$pb")"
-        fi
-    done
+run_podman() {
+    local name
+    name="$1"
 
     # shellcheck disable=SC2086
-    container_id=$(podman run -d "${CONTAINER_OPTS[@]}" --name "$test_pb_base" \
+    container_id=$(podman run -d "${CONTAINER_OPTS[@]}" --name "$name" \
         ${LSR_CONTAINER_OPTS:-} "${CONTAINER_MOUNTS[@]}" "$CONTAINER_IMAGE" \
         "$CONTAINER_ENTRYPOINT")
     CONTAINER_CLEANUP="podman rm -f $container_id"
 
-    if [ -z "$container_id" ]; then
-        error Failed to start container
-        exit 1
-    fi
-
-    inv_file="$WORKDIR/inventory"
     sleep 1  # give the container a chance to start up
     if ! podman exec -i "$container_id" /bin/bash -euxo pipefail -c '
         limit=60
@@ -341,7 +326,29 @@ run_playbooks() {
         podman inspect "$container_id"
         return 1
     fi
+}
 
+run_playbooks() {
+    # shellcheck disable=SC2086
+    local test_pb_base test_dir pb test_pbs
+    test_pbs=()
+    test_pb_base="$1"; shift
+    for pb in "$@"; do
+        pb="$(realpath "$pb")"
+        test_pbs+=("$pb")
+        if [ -z "${test_dir:-}" ]; then
+            test_dir="$(dirname "$pb")"
+        fi
+    done
+
+    run_podman "$test_pb_base"
+
+    if [ -z "$container_id" ]; then
+        error Failed to start container
+        exit 1
+    fi
+
+    inv_file="$WORKDIR/inventory"
     echo "sut ansible_host=$container_id ansible_connection=podman" > "$inv_file"
     setup_vault "$test_dir" "${test_pb_base}.yml"
     pushd "$test_dir" > /dev/null
