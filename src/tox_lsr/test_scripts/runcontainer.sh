@@ -16,6 +16,8 @@ CONTAINER_CONFIG="$HOME/.config/linux-system-roles.json"
 COLLECTION_BASE_PATH="${COLLECTION_BASE_PATH:-$TOX_WORK_DIR}"
 LOCAL_COLLECTION="${LOCAL_COLLECTION:-fedora/linux_system_roles}"
 
+BOOTC_MODE=
+
 is_ansible_env_var_supported() {
     ansible-config list | grep -q "name: ${1}$"
 }
@@ -61,10 +63,8 @@ install_requirements() {
     coll_path="$COLLECTION_BASE_PATH/ansible_collections"
     if [ -d "$coll_path/$LOCAL_COLLECTION" ]; then
         info saving local collection at "$coll_path/$LOCAL_COLLECTION"
-        save_tar="$(mktemp)"
+        save_tar="$WORKDIR/save.tar"
         tar cfP "$save_tar" -C "$coll_path" "$LOCAL_COLLECTION"
-        # shellcheck disable=SC2064
-        trap "rm -f $save_tar" RETURN
     fi
     for rq in meta/requirements.yml meta/collection-requirements.yml; do
         if [ -f "$rq" ]; then
@@ -121,18 +121,22 @@ setup_plugins() {
         fi
         export ANSIBLE_CALLBACK_PLUGINS="$callback_plugin_dir"
     fi
-    if [ -z "${ANSIBLE_CONNECTION_PLUGINS:-}" ] || [ ! -f "$ANSIBLE_CONNECTION_PLUGINS/podman.py" ]; then
+    local con_plugin
+    if [ -n "$BOOTC_MODE" ]; then
+        con_plugin="buildah.py"
+    else
+        con_plugin="podman.py"
+    fi
+    if [ -z "${ANSIBLE_CONNECTION_PLUGINS:-}" ] || [ ! -f "$ANSIBLE_CONNECTION_PLUGINS/$con_plugin" ]; then
         local connection_plugin_dir
         connection_plugin_dir="${ANSIBLE_CONNECTION_PLUGINS:-$TOX_WORK_DIR/connection_plugins}"
-        local podman_py
-        podman_py="$connection_plugin_dir/podman.py"
-        if [ ! -f "$podman_py" ]; then
+        if [ ! -f "$connection_plugin_dir/$con_plugin" ]; then
             ansible-galaxy collection install -p "$LSR_TOX_ENV_TMP_DIR" -vv containers.podman
             if [ ! -d "$connection_plugin_dir" ]; then
                 mkdir -p "$connection_plugin_dir"
             fi
-            mv "$LSR_TOX_ENV_TMP_DIR/ansible_collections/containers/podman/plugins/connection/podman.py" \
-                "$podman_py"
+            mv "$LSR_TOX_ENV_TMP_DIR/ansible_collections/containers/podman/plugins/connection/$con_plugin" \
+                "$connection_plugin_dir"
             rm -rf "$LSR_TOX_ENV_TMP_DIR/ansible_collections"
         fi
         export ANSIBLE_CONNECTION_PLUGINS="$connection_plugin_dir"
@@ -140,9 +144,8 @@ setup_plugins() {
 }
 
 refresh_test_container() {
-    local erase_old_snapshot setup_yml
+    local erase_old_snapshot
     erase_old_snapshot="${1:-false}"
-    setup_yml="${2:-}"
     # see if we need to update our test image - if the test image is older than $CONTAINER_AGE
     # then recreate it
     local age created datepat container_id
@@ -160,90 +163,108 @@ refresh_test_container() {
     fi
 
     # shellcheck disable=SC2086
-    if [ "$erase_old_snapshot" = true ] || [ "$created" -lt "$age" ]; then
-        local pkgcmd prepkgs initpkgs image_name
-        case "$CONTAINER_IMAGE_NAME" in
-        *-7) pkgcmd=yum ;
-             initpkgs="" ;
-             prepkgs="" ;;
-        *-8) pkgcmd=dnf ;
-             initpkgs="" ;
-             prepkgs="" ;;
-        *-9) pkgcmd=dnf ;
-             initpkgs=systemd ;
-             prepkgs="dnf-plugins-core" ;;
-        *) pkgcmd=dnf; prepkgs="" ;;
-        esac
-        for rpm in ${EXTRA_RPMS:-}; do
-            initpkgs="$rpm $initpkgs"
-        done
-        image_name="$CONTAINER_BASE_IMAGE"
-        if [ -n "${initpkgs:-}" ]; then
-            # some images do not have the entrypoint, so that must be installed
-            # first
-            container_id=$(podman run -d "${CONTAINER_OPTS[@]}" ${LSR_CONTAINER_OPTS:-} \
-                "${CONTAINER_MOUNTS[@]}" "$image_name" sleep 3600)
-            if [ -z "$container_id" ]; then
-                error Failed to start container
-                return 1
-            fi
-            sleep 1  # ensure container is running
-            if ! podman exec -i "$container_id" "$pkgcmd" install -y $initpkgs; then
-                podman inspect "$container_id"
-                podman rm -f "$container_id"
-                return 1
-            fi
-            if ! podman container commit "$container_id" "$CONTAINER_IMAGE"; then
-                podman rm -f "$container_id"
-                return 1
-            fi
-            podman rm -f "$container_id"
-            image_name="$CONTAINER_IMAGE"
-        fi
+    if [ "$erase_old_snapshot" = false ] && [ "$created" -ge "$age" ]; then
+        return 0
+    fi
+
+    local setup_json setup_yml
+    setup_json="$WORKDIR/setup.json"
+    setup_yml="$WORKDIR/setup.yml"
+    jq -r '.images[] | select(.name == "'"$CONTAINER_IMAGE_NAME"'") | .setup' "$CONTAINER_CONFIG" > "$setup_json"
+    python -c '
+import json, yaml, sys
+val = json.load(open(sys.argv[1]))
+if not val:
+  sys.exit(0)
+yaml.safe_dump(val, open(sys.argv[2], "w"))
+' "$setup_json" "$setup_yml"
+
+    local pkgcmd prepkgs initpkgs image_name
+    case "$CONTAINER_IMAGE_NAME" in
+    *-7) pkgcmd=yum ;
+            initpkgs="" ;
+            prepkgs="" ;;
+    *-8) pkgcmd=dnf ;
+            initpkgs="" ;
+            prepkgs="" ;;
+    *-9) pkgcmd=dnf ;
+            initpkgs=systemd ;
+            prepkgs="dnf-plugins-core" ;;
+    fedora-40) pkgcmd=dnf ;
+                prepkgs="" ;;
+    fedora-*) pkgcmd=dnf ;
+                prepkgs="python3-libdnf5" ;;
+    *) pkgcmd=dnf; prepkgs="" ;;
+    esac
+    for rpm in ${EXTRA_RPMS:-}; do
+        initpkgs="$rpm $initpkgs"
+    done
+    image_name="$CONTAINER_BASE_IMAGE"
+    if [ -n "${initpkgs:-}" ]; then
+        # some images do not have the entrypoint, so that must be installed
+        # first
         container_id=$(podman run -d "${CONTAINER_OPTS[@]}" ${LSR_CONTAINER_OPTS:-} \
-            "${CONTAINER_MOUNTS[@]}" "$image_name" "$CONTAINER_ENTRYPOINT")
+            "${CONTAINER_MOUNTS[@]}" "$image_name" sleep 3600)
         if [ -z "$container_id" ]; then
             error Failed to start container
             return 1
         fi
         sleep 1  # ensure container is running
-        inv_file="$(mktemp)"
-        echo "sut ansible_host=$container_id ansible_connection=podman" > "$inv_file"
-        # shellcheck disable=SC2064
-        trap "podman rm -f $container_id; rm -f $inv_file" RETURN
-        if [ -n "${prepkgs:-}" ]; then
-            if ! podman exec -i "$container_id" "$pkgcmd" install -y $prepkgs; then
-                podman inspect "$container_id"
-                return 1
-            fi
-        fi
-        if [ -n "${setup_yml:-}" ] && [ -f "${setup_yml}" ] && [ -s "${setup_yml}" ]; then
-            # shellcheck disable=SC2086
-            if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
-                "$setup_yml"; then
-                return 1
-            fi
-        fi
-        if ! podman exec -i "$container_id" "$pkgcmd" upgrade -y; then
+        if ! podman exec -i "$container_id" "$pkgcmd" install -y $initpkgs; then
             podman inspect "$container_id"
+            podman rm -f "$container_id"
             return 1
-        fi
-        COMMON_PKGS="sudo procps-ng systemd-udev device-mapper openssh-server \
-            openssh-clients iproute"
-        if ! podman exec -i "$container_id" "$pkgcmd" install -y $COMMON_PKGS; then
-            podman inspect "$container_id"
-            return 1
-        fi
-        if [ -f "${CONTAINER_TESTS_PATH}/setup-snapshot.yml" ]; then
-            # shellcheck disable=SC2086
-            if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
-                "${CONTAINER_TESTS_PATH}/setup-snapshot.yml"; then
-                return 1
-            fi
         fi
         if ! podman container commit "$container_id" "$CONTAINER_IMAGE"; then
+            podman rm -f "$container_id"
             return 1
         fi
+        podman rm -f "$container_id"
+        image_name="$CONTAINER_IMAGE"
+    fi
+    container_id=$(podman run -d "${CONTAINER_OPTS[@]}" ${LSR_CONTAINER_OPTS:-} \
+        "${CONTAINER_MOUNTS[@]}" "$image_name" "$CONTAINER_ENTRYPOINT")
+    if [ -z "$container_id" ]; then
+        error Failed to start container
+        return 1
+    fi
+    sleep 1  # ensure container is running
+    inv_file="$WORKDIR/inventory-refresh"
+    echo "sut ansible_host=$container_id ansible_connection=podman" > "$inv_file"
+    # shellcheck disable=SC2064
+    trap "podman rm -f $container_id" RETURN
+    if [ -n "${prepkgs:-}" ]; then
+        if ! podman exec -i "$container_id" "$pkgcmd" install -y $prepkgs; then
+            podman inspect "$container_id"
+            return 1
+        fi
+    fi
+    if [ -s "${setup_yml}" ]; then
+        # shellcheck disable=SC2086
+        if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
+            "$setup_yml"; then
+            return 1
+        fi
+    fi
+    if ! podman exec -i "$container_id" "$pkgcmd" upgrade -y; then
+        podman inspect "$container_id"
+        return 1
+    fi
+    COMMON_PKGS="sudo procps-ng systemd-udev device-mapper openssh-server \
+        openssh-clients iproute"
+    if ! podman exec -i "$container_id" "$pkgcmd" install -y $COMMON_PKGS; then
+        podman inspect "$container_id"
+        return 1
+    fi
+    if [ -f "${CONTAINER_TESTS_PATH}/setup-snapshot.yml" ]; then
+        # shellcheck disable=SC2086
+        if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
+            "${CONTAINER_TESTS_PATH}/setup-snapshot.yml"; then
+            return 1
+        fi
+    fi
+    if ! podman container commit "$container_id" "$CONTAINER_IMAGE"; then
+        return 1
     fi
     return 0
 }
@@ -268,34 +289,16 @@ setup_vault() {
     fi
 }
 
-run_playbooks() {
-    # shellcheck disable=SC2086
-    local test_pb_base test_dir pb test_pbs
-    test_pbs=()
-    test_pb_base="$1"; shift
-    for pb in "$@"; do
-        pb="$(realpath "$pb")"
-        test_pbs+=("$pb")
-        if [ -z "${test_dir:-}" ]; then
-            test_dir="$(dirname "$pb")"
-        fi
-    done
+run_podman() {
+    local name
+    name="$1"
 
     # shellcheck disable=SC2086
-    container_id=$(podman run -d "${CONTAINER_OPTS[@]}" --name "$test_pb_base" \
+    container_id=$(podman run -d "${CONTAINER_OPTS[@]}" --name "$name" \
         ${LSR_CONTAINER_OPTS:-} "${CONTAINER_MOUNTS[@]}" "$CONTAINER_IMAGE" \
         "$CONTAINER_ENTRYPOINT")
+    CONTAINER_CLEANUP="podman rm -f $container_id"
 
-    if [ -z "$container_id" ]; then
-        error Failed to start container
-        exit 1
-    fi
-
-    inv_file="$(mktemp)"
-    if [ -z "${LSR_DEBUG:-}" ]; then
-        # shellcheck disable=SC2064
-        trap "rm -rf $inv_file; podman rm -f $container_id" RETURN EXIT
-    fi
     sleep 1  # give the container a chance to start up
     if ! podman exec -i "$container_id" /bin/bash -euxo pipefail -c '
         limit=60
@@ -329,8 +332,42 @@ run_playbooks() {
         podman inspect "$container_id"
         return 1
     fi
+}
 
-    echo "sut ansible_host=$container_id ansible_connection=podman" > "$inv_file"
+run_buildah() {
+    container_id=$(buildah from --name "$1" "$CONTAINER_BASE_IMAGE")
+    CONTAINER_CLEANUP="buildah rm $container_id"
+}
+
+run_playbooks() {
+    # shellcheck disable=SC2086
+    local test_pb_base test_dir pb test_pbs
+    test_pbs=()
+    test_pb_base="$1"; shift
+    for pb in "$@"; do
+        pb="$(realpath "$pb")"
+        test_pbs+=("$pb")
+        if [ -z "${test_dir:-}" ]; then
+            test_dir="$(dirname "$pb")"
+        fi
+    done
+
+    inv_file="$WORKDIR/inventory"
+
+    if [ -n "$BOOTC_MODE" ]; then
+        run_buildah "$test_pb_base"
+        # tmpdir hack: https://issues.redhat.com/browse/BIFROST-726
+        echo "sut ansible_host=$container_id ansible_connection=buildah ansible_remote_tmp=/tmp" > "$inv_file"
+    else
+        run_podman "$test_pb_base"
+        echo "sut ansible_host=$container_id ansible_connection=podman" > "$inv_file"
+    fi
+
+    if [ -z "$container_id" ]; then
+        error Failed to start container
+        exit 1
+    fi
+
     setup_vault "$test_dir" "${test_pb_base}.yml"
     pushd "$test_dir" > /dev/null
     if [ "$PARALLEL" -gt 0 ]; then
@@ -341,11 +378,13 @@ run_playbooks() {
                 -e ansible_playbook_filepath="$(type -p ansible-playbook)" "$pb"
         done
     else
-        # shellcheck disable=SC2086
-        ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} ${EXTRA_SKIP_TAGS:-} \
-            -i "$inv_file" ${vault_args:-} \
-            -e ansible_playbook_filepath="$(type -p ansible-playbook)" \
-            "${test_pbs[@]}"
+        for pb in "${test_pbs[@]}"; do
+            # shellcheck disable=SC2086
+            ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} ${EXTRA_SKIP_TAGS:-} \
+                -i "$inv_file" ${vault_args:-} \
+                -e ansible_playbook_filepath="$(type -p ansible-playbook)" \
+                "$pb"
+        done
     fi
     popd > /dev/null
 }
@@ -436,29 +475,23 @@ while [ -n "${1:-}" ]; do
     shift
 done
 
+WORKDIR="$(mktemp --directory --tmpdir runcontainer.XXXXXX)"
+info work directory: $WORKDIR
+if [ -z "${LSR_DEBUG:-}" ]; then
+    # shellcheck disable=SC2064
+    trap 'rm -rf "$WORKDIR"; ${CONTAINER_CLEANUP:-}' EXIT INT QUIT PIPE
+fi
+
+if [ "${CONTAINER_IMAGE_NAME%-bootc*}" != "$CONTAINER_IMAGE_NAME" ]; then
+    BOOTC_MODE=1
+fi
+
 CONTAINER_BASE_IMAGE=$(jq -r '.images[] | select(.name == "'"$CONTAINER_IMAGE_NAME"'") | .container' "$CONTAINER_CONFIG")
 if [ "${CONTAINER_BASE_IMAGE:-null}" = null ] ; then
     error container named "$CONTAINER_IMAGE_NAME" not found in "$CONTAINER_CONFIG"
     exit 1
 fi
 CONTAINER_IMAGE=${CONTAINER_IMAGE:-"lsr-test-$CONTAINER_IMAGE_NAME:latest"}
-setup_json=$(mktemp --suffix _setup.json)
-setup_yml=$(mktemp --suffix _setup.yml)
-jq -r '.images[] | select(.name == "'"$CONTAINER_IMAGE_NAME"'") | .setup' "$CONTAINER_CONFIG" > "$setup_json"
-python -c '
-import json, yaml, sys
-val = json.load(open(sys.argv[1]))
-if not val:
-  sys.exit(0)
-yaml.safe_dump(val, open(sys.argv[2], "w"))
-' "$setup_json" "$setup_yml"
-rm -f "$setup_json"
-if [ -z "${CONTAINER_ENTRYPOINT:-}" ]; then
-    case "$CONTAINER_IMAGE_NAME" in
-    *-6) CONTAINER_ENTRYPOINT=/sbin/init ;;
-    *) CONTAINER_ENTRYPOINT=/usr/sbin/init ;;
-    esac
-fi
 
 echo ::group::install collection requirements
 install_requirements
@@ -466,13 +499,21 @@ echo ::endgroup::
 echo ::group::install and configure plugins used by tests
 setup_plugins
 echo ::endgroup::
-echo ::group::setup and prepare test container
-if ! refresh_test_container "$ERASE_OLD_SNAPSHOT" "$setup_yml"; then
-    rm -f "$setup_yml"
-    exit 1
+
+if [ -z "$BOOTC_MODE" ]; then
+    echo ::group::setup and prepare test container
+    if [ -z "${CONTAINER_ENTRYPOINT:-}" ]; then
+        case "$CONTAINER_IMAGE_NAME" in
+        *-6) CONTAINER_ENTRYPOINT=/sbin/init ;;
+        *) CONTAINER_ENTRYPOINT=/usr/sbin/init ;;
+        esac
+    fi
+
+    if ! refresh_test_container "$ERASE_OLD_SNAPSHOT"; then
+        exit 1
+    fi
+    echo ::endgroup::
 fi
-echo ::endgroup::
-rm -f "$setup_yml"
 
 declare -A cur_jobs=()
 declare -A log_files=()
