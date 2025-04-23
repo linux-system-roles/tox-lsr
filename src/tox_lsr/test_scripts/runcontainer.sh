@@ -341,11 +341,13 @@ run_playbooks() {
                 -e ansible_playbook_filepath="$(type -p ansible-playbook)" "$pb"
         done
     else
-        # shellcheck disable=SC2086
-        ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} ${EXTRA_SKIP_TAGS:-} \
-            -i "$inv_file" ${vault_args:-} \
-            -e ansible_playbook_filepath="$(type -p ansible-playbook)" \
-            "${test_pbs[@]}"
+        for pb in "${test_pbs[@]}"; do
+            # shellcheck disable=SC2086
+            ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} ${EXTRA_SKIP_TAGS:-} \
+                -i "$inv_file" ${vault_args:-} \
+                -e ansible_playbook_filepath="$(type -p ansible-playbook)" \
+                "$pb"
+        done
     fi
     popd > /dev/null
 }
