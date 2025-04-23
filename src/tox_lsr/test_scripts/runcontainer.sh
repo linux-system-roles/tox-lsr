@@ -172,6 +172,10 @@ refresh_test_container() {
         *-9) pkgcmd=dnf ;
              initpkgs=systemd ;
              prepkgs="dnf-plugins-core" ;;
+        fedora-40) pkgcmd=dnf ;
+                   prepkgs="" ;;
+        fedora-*) pkgcmd=dnf ;
+                  prepkgs="python3-libdnf5" ;;
         *) pkgcmd=dnf; prepkgs="" ;;
         esac
         for rpm in ${EXTRA_RPMS:-}; do
