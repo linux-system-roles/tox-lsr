@@ -160,94 +160,96 @@ refresh_test_container() {
     fi
 
     # shellcheck disable=SC2086
-    if [ "$erase_old_snapshot" = true ] || [ "$created" -lt "$age" ]; then
-        local pkgcmd prepkgs initpkgs image_name
-        case "$CONTAINER_IMAGE_NAME" in
-        *-7) pkgcmd=yum ;
-             initpkgs="" ;
-             prepkgs="" ;;
-        *-8) pkgcmd=dnf ;
-             initpkgs="" ;
-             prepkgs="" ;;
-        *-9) pkgcmd=dnf ;
-             initpkgs=systemd ;
-             prepkgs="dnf-plugins-core" ;;
-        fedora-40) pkgcmd=dnf ;
-                   prepkgs="" ;;
-        fedora-*) pkgcmd=dnf ;
-                  prepkgs="python3-libdnf5" ;;
-        *) pkgcmd=dnf; prepkgs="" ;;
-        esac
-        for rpm in ${EXTRA_RPMS:-}; do
-            initpkgs="$rpm $initpkgs"
-        done
-        image_name="$CONTAINER_BASE_IMAGE"
-        if [ -n "${initpkgs:-}" ]; then
-            # some images do not have the entrypoint, so that must be installed
-            # first
-            container_id=$(podman run -d "${CONTAINER_OPTS[@]}" ${LSR_CONTAINER_OPTS:-} \
-                "${CONTAINER_MOUNTS[@]}" "$image_name" sleep 3600)
-            if [ -z "$container_id" ]; then
-                error Failed to start container
-                return 1
-            fi
-            sleep 1  # ensure container is running
-            if ! podman exec -i "$container_id" "$pkgcmd" install -y $initpkgs; then
-                podman inspect "$container_id"
-                podman rm -f "$container_id"
-                return 1
-            fi
-            if ! podman container commit "$container_id" "$CONTAINER_IMAGE"; then
-                podman rm -f "$container_id"
-                return 1
-            fi
-            podman rm -f "$container_id"
-            image_name="$CONTAINER_IMAGE"
-        fi
+    if [ "$erase_old_snapshot" = false ] && [ "$created" -ge "$age" ]; then
+        return 0
+    fi
+
+    local pkgcmd prepkgs initpkgs image_name
+    case "$CONTAINER_IMAGE_NAME" in
+    *-7) pkgcmd=yum ;
+            initpkgs="" ;
+            prepkgs="" ;;
+    *-8) pkgcmd=dnf ;
+            initpkgs="" ;
+            prepkgs="" ;;
+    *-9) pkgcmd=dnf ;
+            initpkgs=systemd ;
+            prepkgs="dnf-plugins-core" ;;
+    fedora-40) pkgcmd=dnf ;
+                prepkgs="" ;;
+    fedora-*) pkgcmd=dnf ;
+                prepkgs="python3-libdnf5" ;;
+    *) pkgcmd=dnf; prepkgs="" ;;
+    esac
+    for rpm in ${EXTRA_RPMS:-}; do
+        initpkgs="$rpm $initpkgs"
+    done
+    image_name="$CONTAINER_BASE_IMAGE"
+    if [ -n "${initpkgs:-}" ]; then
+        # some images do not have the entrypoint, so that must be installed
+        # first
         container_id=$(podman run -d "${CONTAINER_OPTS[@]}" ${LSR_CONTAINER_OPTS:-} \
-            "${CONTAINER_MOUNTS[@]}" "$image_name" "$CONTAINER_ENTRYPOINT")
+            "${CONTAINER_MOUNTS[@]}" "$image_name" sleep 3600)
         if [ -z "$container_id" ]; then
             error Failed to start container
             return 1
         fi
         sleep 1  # ensure container is running
-        inv_file="$(mktemp)"
-        echo "sut ansible_host=$container_id ansible_connection=podman" > "$inv_file"
-        # shellcheck disable=SC2064
-        trap "podman rm -f $container_id; rm -f $inv_file" RETURN
-        if [ -n "${prepkgs:-}" ]; then
-            if ! podman exec -i "$container_id" "$pkgcmd" install -y $prepkgs; then
-                podman inspect "$container_id"
-                return 1
-            fi
-        fi
-        if [ -n "${setup_yml:-}" ] && [ -f "${setup_yml}" ] && [ -s "${setup_yml}" ]; then
-            # shellcheck disable=SC2086
-            if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
-                "$setup_yml"; then
-                return 1
-            fi
-        fi
-        if ! podman exec -i "$container_id" "$pkgcmd" upgrade -y; then
+        if ! podman exec -i "$container_id" "$pkgcmd" install -y $initpkgs; then
             podman inspect "$container_id"
+            podman rm -f "$container_id"
             return 1
-        fi
-        COMMON_PKGS="sudo procps-ng systemd-udev device-mapper openssh-server \
-            openssh-clients iproute"
-        if ! podman exec -i "$container_id" "$pkgcmd" install -y $COMMON_PKGS; then
-            podman inspect "$container_id"
-            return 1
-        fi
-        if [ -f "${CONTAINER_TESTS_PATH}/setup-snapshot.yml" ]; then
-            # shellcheck disable=SC2086
-            if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
-                "${CONTAINER_TESTS_PATH}/setup-snapshot.yml"; then
-                return 1
-            fi
         fi
         if ! podman container commit "$container_id" "$CONTAINER_IMAGE"; then
+            podman rm -f "$container_id"
             return 1
         fi
+        podman rm -f "$container_id"
+        image_name="$CONTAINER_IMAGE"
+    fi
+    container_id=$(podman run -d "${CONTAINER_OPTS[@]}" ${LSR_CONTAINER_OPTS:-} \
+        "${CONTAINER_MOUNTS[@]}" "$image_name" "$CONTAINER_ENTRYPOINT")
+    if [ -z "$container_id" ]; then
+        error Failed to start container
+        return 1
+    fi
+    sleep 1  # ensure container is running
+    inv_file="$(mktemp)"
+    echo "sut ansible_host=$container_id ansible_connection=podman" > "$inv_file"
+    # shellcheck disable=SC2064
+    trap "podman rm -f $container_id; rm -f $inv_file" RETURN
+    if [ -n "${prepkgs:-}" ]; then
+        if ! podman exec -i "$container_id" "$pkgcmd" install -y $prepkgs; then
+            podman inspect "$container_id"
+            return 1
+        fi
+    fi
+    if [ -n "${setup_yml:-}" ] && [ -f "${setup_yml}" ] && [ -s "${setup_yml}" ]; then
+        # shellcheck disable=SC2086
+        if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
+            "$setup_yml"; then
+            return 1
+        fi
+    fi
+    if ! podman exec -i "$container_id" "$pkgcmd" upgrade -y; then
+        podman inspect "$container_id"
+        return 1
+    fi
+    COMMON_PKGS="sudo procps-ng systemd-udev device-mapper openssh-server \
+        openssh-clients iproute"
+    if ! podman exec -i "$container_id" "$pkgcmd" install -y $COMMON_PKGS; then
+        podman inspect "$container_id"
+        return 1
+    fi
+    if [ -f "${CONTAINER_TESTS_PATH}/setup-snapshot.yml" ]; then
+        # shellcheck disable=SC2086
+        if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
+            "${CONTAINER_TESTS_PATH}/setup-snapshot.yml"; then
+            return 1
+        fi
+    fi
+    if ! podman container commit "$container_id" "$CONTAINER_IMAGE"; then
+        return 1
     fi
     return 0
 }
