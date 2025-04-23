@@ -140,9 +140,8 @@ setup_plugins() {
 }
 
 refresh_test_container() {
-    local erase_old_snapshot setup_yml
+    local erase_old_snapshot
     erase_old_snapshot="${1:-false}"
-    setup_yml="${2:-}"
     # see if we need to update our test image - if the test image is older than $CONTAINER_AGE
     # then recreate it
     local age created datepat container_id
@@ -163,6 +162,20 @@ refresh_test_container() {
     if [ "$erase_old_snapshot" = false ] && [ "$created" -ge "$age" ]; then
         return 0
     fi
+
+    local setup_json setup_yml
+    setup_json=$(mktemp --suffix _setup.json)
+    setup_yml=$(mktemp --suffix _setup.yml)
+    jq -r '.images[] | select(.name == "'"$CONTAINER_IMAGE_NAME"'") | .setup' "$CONTAINER_CONFIG" > "$setup_json"
+    python -c '
+import json, yaml, sys
+val = json.load(open(sys.argv[1]))
+if not val:
+  sys.exit(0)
+yaml.safe_dump(val, open(sys.argv[2], "w"))
+' "$setup_json" "$setup_yml"
+    rm -f "$setup_json"
+    trap "rm -f $setup_yml" RETURN
 
     local pkgcmd prepkgs initpkgs image_name
     case "$CONTAINER_IMAGE_NAME" in
@@ -224,7 +237,7 @@ refresh_test_container() {
             return 1
         fi
     fi
-    if [ -n "${setup_yml:-}" ] && [ -f "${setup_yml}" ] && [ -s "${setup_yml}" ]; then
+    if [ -s "${setup_yml}" ]; then
         # shellcheck disable=SC2086
         if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
             "$setup_yml"; then
@@ -450,17 +463,7 @@ if [ "${CONTAINER_BASE_IMAGE:-null}" = null ] ; then
     exit 1
 fi
 CONTAINER_IMAGE=${CONTAINER_IMAGE:-"lsr-test-$CONTAINER_IMAGE_NAME:latest"}
-setup_json=$(mktemp --suffix _setup.json)
-setup_yml=$(mktemp --suffix _setup.yml)
-jq -r '.images[] | select(.name == "'"$CONTAINER_IMAGE_NAME"'") | .setup' "$CONTAINER_CONFIG" > "$setup_json"
-python -c '
-import json, yaml, sys
-val = json.load(open(sys.argv[1]))
-if not val:
-  sys.exit(0)
-yaml.safe_dump(val, open(sys.argv[2], "w"))
-' "$setup_json" "$setup_yml"
-rm -f "$setup_json"
+
 if [ -z "${CONTAINER_ENTRYPOINT:-}" ]; then
     case "$CONTAINER_IMAGE_NAME" in
     *-6) CONTAINER_ENTRYPOINT=/sbin/init ;;
@@ -475,12 +478,10 @@ echo ::group::install and configure plugins used by tests
 setup_plugins
 echo ::endgroup::
 echo ::group::setup and prepare test container
-if ! refresh_test_container "$ERASE_OLD_SNAPSHOT" "$setup_yml"; then
-    rm -f "$setup_yml"
+if ! refresh_test_container "$ERASE_OLD_SNAPSHOT"; then
     exit 1
 fi
 echo ::endgroup::
-rm -f "$setup_yml"
 
 declare -A cur_jobs=()
 declare -A log_files=()
