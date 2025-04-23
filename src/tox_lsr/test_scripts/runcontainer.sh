@@ -61,10 +61,8 @@ install_requirements() {
     coll_path="$COLLECTION_BASE_PATH/ansible_collections"
     if [ -d "$coll_path/$LOCAL_COLLECTION" ]; then
         info saving local collection at "$coll_path/$LOCAL_COLLECTION"
-        save_tar="$(mktemp)"
+        save_tar="$WORKDIR/save.tar"
         tar cfP "$save_tar" -C "$coll_path" "$LOCAL_COLLECTION"
-        # shellcheck disable=SC2064
-        trap "rm -f $save_tar" RETURN
     fi
     for rq in meta/requirements.yml meta/collection-requirements.yml; do
         if [ -f "$rq" ]; then
@@ -164,8 +162,8 @@ refresh_test_container() {
     fi
 
     local setup_json setup_yml
-    setup_json=$(mktemp --suffix _setup.json)
-    setup_yml=$(mktemp --suffix _setup.yml)
+    setup_json="$WORKDIR/setup.json"
+    setup_yml="$WORKDIR/setup.yml"
     jq -r '.images[] | select(.name == "'"$CONTAINER_IMAGE_NAME"'") | .setup' "$CONTAINER_CONFIG" > "$setup_json"
     python -c '
 import json, yaml, sys
@@ -174,8 +172,6 @@ if not val:
   sys.exit(0)
 yaml.safe_dump(val, open(sys.argv[2], "w"))
 ' "$setup_json" "$setup_yml"
-    rm -f "$setup_json"
-    trap "rm -f $setup_yml" RETURN
 
     local pkgcmd prepkgs initpkgs image_name
     case "$CONTAINER_IMAGE_NAME" in
@@ -227,10 +223,10 @@ yaml.safe_dump(val, open(sys.argv[2], "w"))
         return 1
     fi
     sleep 1  # ensure container is running
-    inv_file="$(mktemp)"
+    inv_file="$WORKDIR/inventory-refresh"
     echo "sut ansible_host=$container_id ansible_connection=podman" > "$inv_file"
     # shellcheck disable=SC2064
-    trap "podman rm -f $container_id; rm -f $inv_file" RETURN
+    trap "podman rm -f $container_id" RETURN
     if [ -n "${prepkgs:-}" ]; then
         if ! podman exec -i "$container_id" "$pkgcmd" install -y $prepkgs; then
             podman inspect "$container_id"
@@ -304,17 +300,14 @@ run_playbooks() {
     container_id=$(podman run -d "${CONTAINER_OPTS[@]}" --name "$test_pb_base" \
         ${LSR_CONTAINER_OPTS:-} "${CONTAINER_MOUNTS[@]}" "$CONTAINER_IMAGE" \
         "$CONTAINER_ENTRYPOINT")
+    CONTAINER_CLEANUP="podman rm -f $container_id"
 
     if [ -z "$container_id" ]; then
         error Failed to start container
         exit 1
     fi
 
-    inv_file="$(mktemp)"
-    if [ -z "${LSR_DEBUG:-}" ]; then
-        # shellcheck disable=SC2064
-        trap "rm -rf $inv_file; podman rm -f $container_id" RETURN EXIT
-    fi
+    inv_file="$WORKDIR/inventory"
     sleep 1  # give the container a chance to start up
     if ! podman exec -i "$container_id" /bin/bash -euxo pipefail -c '
         limit=60
@@ -456,6 +449,13 @@ while [ -n "${1:-}" ]; do
     esac
     shift
 done
+
+WORKDIR="$(mktemp --directory --tmpdir runcontainer.XXXXXX)"
+info work directory: $WORKDIR
+if [ -z "${LSR_DEBUG:-}" ]; then
+    # shellcheck disable=SC2064
+    trap 'rm -rf "$WORKDIR"; ${CONTAINER_CLEANUP:-}' EXIT INT QUIT PIPE
+fi
 
 CONTAINER_BASE_IMAGE=$(jq -r '.images[] | select(.name == "'"$CONTAINER_IMAGE_NAME"'") | .container' "$CONTAINER_CONFIG")
 if [ "${CONTAINER_BASE_IMAGE:-null}" = null ] ; then
