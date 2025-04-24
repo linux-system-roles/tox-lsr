@@ -127,16 +127,16 @@ setup_plugins() {
     else
         con_plugin="podman.py"
     fi
-    if [ -z "${ANSIBLE_CONNECTION_PLUGINS:-}" ] || [ ! -f "$ANSIBLE_CONNECTION_PLUGINS/$con_plugin" ]; then
+    local collection_plugin_path="ansible_collections/containers/podman/plugins/connection/$con_plugin"
+    # the role may already depend on containers.podman
+    if [ ! -f "$TOX_WORK_DIR/$collection_plugin_path" ] &&
+        [ -z "${ANSIBLE_CONNECTION_PLUGINS:-}" -o ! -f "${ANSIBLE_CONNECTION_PLUGINS:-}/$con_plugin" ]; then
         local connection_plugin_dir
         connection_plugin_dir="${ANSIBLE_CONNECTION_PLUGINS:-$TOX_WORK_DIR/connection_plugins}"
         if [ ! -f "$connection_plugin_dir/$con_plugin" ]; then
             ansible-galaxy collection install -p "$LSR_TOX_ENV_TMP_DIR" -vv containers.podman
-            if [ ! -d "$connection_plugin_dir" ]; then
-                mkdir -p "$connection_plugin_dir"
-            fi
-            mv "$LSR_TOX_ENV_TMP_DIR/ansible_collections/containers/podman/plugins/connection/$con_plugin" \
-                "$connection_plugin_dir"
+            mkdir -p "$connection_plugin_dir"
+            mv "$LSR_TOX_ENV_TMP_DIR/$collection_plugin_path" "$connection_plugin_dir"
             rm -rf "$LSR_TOX_ENV_TMP_DIR/ansible_collections"
         fi
         export ANSIBLE_CONNECTION_PLUGINS="$connection_plugin_dir"
