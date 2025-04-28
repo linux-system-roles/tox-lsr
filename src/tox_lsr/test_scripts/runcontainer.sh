@@ -193,7 +193,7 @@ yaml.safe_dump(val, open(sys.argv[2], "w"))
     fedora-40) pkgcmd=dnf ;
                 prepkgs="" ;;
     fedora-*) pkgcmd=dnf ;
-                prepkgs="python3-libdnf5" ;;
+                prepkgs="python3-libdnf5 python3-rpm" ;;
     *) pkgcmd=dnf; prepkgs="" ;;
     esac
     for rpm in ${EXTRA_RPMS:-}; do
@@ -339,7 +339,7 @@ run_buildah() {
     CONTAINER_CLEANUP="buildah rm $container_id"
     # HACK: Until https://gitlab.com/fedora/bootc/base-images/-/merge_requests/167 lands
     if echo "$CONTAINER_BASE_IMAGE" | grep -q 'fedora-.*bootc'; then
-        buildah run "$container_id" -- dnf install -y python3-libdnf5
+        buildah run "$container_id" -- dnf install -y python3-libdnf5 python3-rpm
     fi
 }
 
