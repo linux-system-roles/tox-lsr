@@ -341,6 +341,8 @@ run_buildah() {
     if echo "$CONTAINER_BASE_IMAGE" | grep -q 'fedora-.*bootc'; then
         buildah run "$container_id" -- dnf install -y python3-libdnf5 python3-rpm
     fi
+    # HACK: fix /root directory https://issues.redhat.com/browse/BIFROST-726
+    buildah run "$container_id" -- mkdir -p /var/roothome
 }
 
 run_playbooks() {
