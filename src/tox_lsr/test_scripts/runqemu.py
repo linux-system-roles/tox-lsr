@@ -4,6 +4,7 @@
 import argparse
 import errno
 import glob
+import hashlib
 import json
 import logging
 import os
@@ -1011,14 +1012,23 @@ def get_batches_from_playbooks_and_args(
 
 
 def make_batch_file(
-    batch_file, tests_dir, ansible_args, make_batch_file_order
+    batch_file, tests_dir, ansible_args, image, make_batch_file_order
 ):
     """Create a batch file from the tests_*.yml."""
     if tests_dir is None:
         tests_dir = "tests"
     tests = glob.glob(tests_dir + "/tests_*.yml")
-    if make_batch_file_order == "alphanum":
+    if make_batch_file_order == "ascending":
         tests = sorted(tests)
+    elif make_batch_file_order == "descending":
+        tests = sorted(tests, reverse=True)
+    elif make_batch_file_order == "imagehash":
+        sha = hashlib.sha1(
+            image["name"].encode(), usedforsecurity=False
+        ).digest()
+        tests = sorted(tests, reverse=bool(sha[0] & 1))
+    elif make_batch_file_order != "natural":
+        raise ValueError("unknown order: %s" % make_batch_file_order)
     fmtstr = "--tests-dir {} --log-file {{}} ".format(tests_dir)
     for aarg in ansible_args:
         fmtstr = fmtstr + "{} ".format(aarg)
@@ -1062,7 +1072,7 @@ def run_ansible_playbooks(  # noqa: C901
         batch_file = "batch.txt"
         batch_report = "batch.report"
         make_batch_file(
-            batch_file, tests_dir, ansible_args, make_batch_file_order
+            batch_file, tests_dir, ansible_args, image, make_batch_file_order
         )
     batches = get_batches_from_playbooks_and_args(
         ansible_args,
@@ -1708,16 +1718,19 @@ def get_arg_parser():
             strtobool(os.environ.get("LSR_QEMU_MAKE_BATCH", "False"))
         ),
         help=(
-            "Create a batch file from all of the tests/tests_*.yml and run it."
+            "Create a batch file from all of the tests/tests_*.yml and run it "
+            "in 'imagehash' order. "
         ),
     )
     parser.add_argument(
         "--make-batch-file-order",
         default=os.environ.get("LSR_QEMU_MAKE_BATCH_FILE_ORDER", ""),
-        choices=["alphanum", "natural"],
+        choices=["ascending", "descending", "imagehash", "natural"],
         help=(
             "The sort order for the tests/tests_*.yml files for make-batch.  "
-            "alphanum is en.US ASCII order.  "
+            "ascending/descending are en.US ASCII order.  "
+            "imagehash is ascending or descending depending on an 1-bit hash "
+            "of the image name.  "
             "natural is the filesystem inode order.  "
             "Implies --make-batch."
         ),
@@ -1757,7 +1770,7 @@ def main():
     if args.make_batch_file_order:
         args.make_batch = True
     elif args.make_batch:
-        args.make_batch_file_order = "alphanum"
+        args.make_batch_file_order = "imagehash"
 
     prep_el6(args)
     image = get_image_config(args)
