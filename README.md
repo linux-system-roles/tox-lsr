@@ -649,12 +649,19 @@ You must specify the trailing `--` on the command line to tell runqemu that
 there are no more arguments.  You can then edit the `batch.txt` file to remove
 files, change arguments, etc. and re-run using `--batch-file batch.txt`.
 
-By default, `--make-batch` will sort the list of test files in `alphanum` which
-is US ASCII sort order (using the python `sorted` function).  If you want to use
-a different sort order, use `--make-batch-file-order ORDER`.  Currently, the
-only other `ORDER` is `natural` which is the default filesystem order (whatever
-is the order returned by `glob("tests/tests_*.yml")`).  Note that when you
-specify `--make-batch-file-order`, that implies `--make-batch`.
+By default, `--make-batch` will sort the list of test files in `imagehash`
+order. If you want to use a different order, use `--make-batch-file-order ORDER`.
+Supported `ORDER` values are:
+
+ - `ascending`: US ASCII sort order (using Python's `sorted()` function)
+ - `descending`: reverse  US ASCII sort order
+ - `imagehash`: `ascending` or `descending` depending on an 1-bit hash of the
+   image name; this is a good compromise between avoiding test dependencies and
+   still keeping a reproducible order
+ - `natural`: default filesystem order (whatever is the order returned by
+   `glob("tests/tests_*.yml")`)
+
+Note that when you specify `--make-batch-file-order`, that implies `--make-batch`.
 
 Only the following `runqemu` arguments are supported in batch files:
 `--log-file`, `--artifacts`, `--setup-yml`, `--tests-dir`, `--cleanup-yml`, and
