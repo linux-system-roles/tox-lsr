@@ -57,6 +57,10 @@ DEFAULT_QEMU_INVENTORY_URL = (
     "https://pagure.io/fork/rmeggins/standard-test-roles/raw/"
     "linux-system-roles/f/inventory/standard-inventory-qcow2"
 )
+DEFAULT_LSR_QEMU_REPORT_ERRORS_URL = (
+    "https://raw.githubusercontent.com/linux-system-roles/"
+    "auto-maintenance/main/callback_plugins/lsr_report_errors.py"
+)
 INVENTORY_FAIL_MSG = "ERROR: Inventory is empty, tests did not run"
 DEFAULT_PROFILE_TASK_LIMIT = 30  # report up to 30 tasks in profile
 DEFAULT_POST_SNAP_SLEEP_TIME = 1  # seconds
@@ -150,7 +154,7 @@ def urlopen_retry(url):
         try:
             yield urlopen(url)
             return
-        except IOError as e:
+        except OSError as e:
             last_error = e
             msg = str(e)
             logging.warning(
@@ -182,12 +186,50 @@ def get_inventory_script(inventory):
             with urlopen_retry(inventory) as url_response:  # nosec
                 with open(inventory_tempfile, "wb") as inf:
                     shutil.copyfileobj(url_response, inf)
-            os.chmod(inventory_tempfile, 0o777)  # nosec
+            os.chmod(inventory_tempfile, 0o755)  # nosec
             inventory = inventory_tempfile
-        except Exception:  # pylint: disable=broad-except
-            logging.warning(traceback.format_exc())
+        except OSError:
+            logging.warning(
+                "Could not download [%s] - falling back to default [%s]",
+                inventory,
+                DEFAULT_QEMU_INVENTORY,
+            )
             inventory = DEFAULT_QEMU_INVENTORY
     return inventory
+
+
+def get_callback_plugin_dir(test_env):
+    """Determine callback plugins path, create if missing, set env. var."""
+    callback_plugin_dir = os.path.join(
+        os.environ["TOX_WORK_DIR"], "callback_plugins"
+    )
+    os.makedirs(callback_plugin_dir, exist_ok=True)
+    cur_value = test_env.get("ANSIBLE_CALLBACK_PLUGINS")
+    if cur_value:
+        test_env["ANSIBLE_CALLBACK_PLUGINS"] = (
+            cur_value + ":" + callback_plugin_dir
+        )
+    else:
+        test_env["ANSIBLE_CALLBACK_PLUGINS"] = callback_plugin_dir
+    return callback_plugin_dir
+
+
+def get_lsr_report_errors_script(lsr_report_errors_url, test_env):
+    """Get lsr_report_errors.py from given file or url."""
+    if not lsr_report_errors_url:
+        return
+    if lsr_report_errors_url == "DEFAULT":
+        lsr_report_errors_url = DEFAULT_LSR_QEMU_REPORT_ERRORS_URL
+    callback_plugin_dir = get_callback_plugin_dir(test_env)
+    basename = os.path.basename(lsr_report_errors_url)
+    lsr_report_errors_destfile = os.path.join(callback_plugin_dir, basename)
+    if lsr_report_errors_url.startswith("http"):
+        with urlopen_retry(lsr_report_errors_url) as url_response:  # nosec
+            with open(lsr_report_errors_destfile, "wb") as inf:
+                shutil.copyfileobj(url_response, inf)
+    else:  # assume local file
+        shutil.copyfile(lsr_report_errors_url, lsr_report_errors_destfile)
+    os.chmod(lsr_report_errors_destfile, 0o644)
 
 
 def fetch_image(url, cache, label):
@@ -226,7 +268,7 @@ def fetch_image(url, cache, label):
         try:
             with urlopen_retry(url) as request:  # nosec
                 shutil.copyfileobj(request, image_tempfile)
-        except Exception:  # pylint: disable=broad-except
+        except OSError:
             logging.warning(traceback.format_exc())
             os.unlink(image_tempfile.name)
             return None
@@ -563,8 +605,7 @@ def prep_el6(args):
         return
     # If it does not exist, create openssl_el6.conf in ~/.config.
     dot_config = os.path.join(os.environ["HOME"], ".config")
-    if not os.path.isdir(dot_config):
-        os.makedirs(dot_config)
+    os.makedirs(dot_config, exist_ok=True)
     openssl_el6_conf = os.path.join(dot_config, "openssl_el6.conf")
     os.environ["OPENSSL_CONF"] = openssl_el6_conf
     if not os.path.exists(openssl_el6_conf):
@@ -1120,8 +1161,7 @@ def run_ansible_playbooks(  # noqa: C901
             test_env["ANSIBLE_LOG_PATH"] = os.path.join(
                 test_env["TEST_ARTIFACTS"], "ansible.log"
             )
-        if not os.path.isdir(test_env["TEST_ARTIFACTS"]):
-            os.makedirs(test_env["TEST_ARTIFACTS"])
+        os.makedirs(test_env["TEST_ARTIFACTS"], exist_ok=True)
 
         if batch.args and batch.args.log_file:
             local_log_file = os.path.abspath(batch.args.log_file)
@@ -1288,11 +1328,7 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
         return
     if not pretty and not profile:
         return
-    callback_plugin_dir = os.path.join(
-        os.environ["TOX_WORK_DIR"], "callback_plugins"
-    )
-    if not os.path.isdir(callback_plugin_dir):
-        os.makedirs(callback_plugin_dir)
+    callback_plugin_dir = get_callback_plugin_dir(test_env)
     galaxy_env = {}
     galaxy_env.update(dict(os.environ))
     galaxy_env[COLL_PATH_ENV_VAR] = os.environ["LSR_TOX_ENV_TMP_DIR"]
@@ -1355,7 +1391,6 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
         if profile_task_limit > -1:
             val = str(profile_task_limit)
             test_env["PROFILE_TASKS_TASK_OUTPUT_LIMIT"] = val
-    test_env["ANSIBLE_CALLBACK_PLUGINS"] = callback_plugin_dir
 
 
 def runqemu(
@@ -1389,6 +1424,7 @@ def runqemu(
     make_batch=None,
     ansible_container=None,
     make_batch_file_order=None,
+    lsr_report_errors_url=None,
 ):
     """Download the image, set up, run playbooks."""
     if write_inventory:
@@ -1428,6 +1464,7 @@ def runqemu(
     install_requirements(sourcedir, collection_path, test_env, collection)
     inventory = get_inventory_script(inventory)
     setup_callback_plugins(pretty, profile, profile_task_limit, test_env)
+    get_lsr_report_errors_script(lsr_report_errors_url, test_env)
     if ansible_args is None:
         ansible_args = []
     run_ansible_playbooks(
@@ -1740,6 +1777,16 @@ def get_arg_parser():
         default=os.environ.get("LSR_QEMU_ANSIBLE_CONTAINER"),
         help=("Run ansible from container instead of local venv."),
     )
+    parser.add_argument(
+        "--lsr-report-errors-url",
+        default=os.environ.get(
+            "LSR_QEMU_REPORT_ERRORS_URL",
+        ),
+        help=(
+            "URL or file for lsr_report_errors.py - "
+            "specify DEFAULT to use the default."
+        ),
+    )
     return parser
 
 
@@ -1765,8 +1812,7 @@ def main():
         sys.exit(1)
     if args.post_snap_sleep_time == 0:
         args.post_snap_sleep_time = DEFAULT_POST_SNAP_SLEEP_TIME
-    if not os.path.isdir(args.cache):
-        os.makedirs(args.cache)
+    os.makedirs(args.cache, exist_ok=True)
     if args.make_batch_file_order:
         args.make_batch = True
     elif args.make_batch:
@@ -1803,6 +1849,7 @@ def main():
         make_batch=args.make_batch,
         ansible_container=args.ansible_container,
         make_batch_file_order=args.make_batch_file_order,
+        lsr_report_errors_url=args.lsr_report_errors_url,
     )
 
 
