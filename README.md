@@ -550,6 +550,13 @@ the tox-lsr repo.
 * `--ansible-container` - default is None. Run ansible from a container rather
   than installing it and running it from a local tox venv.  The corresponding
   environment variable is `LSR_QEMU_ANSIBLE_CONTAINER`.
+* `--lsr-report-errors-url` - default is None.  Specifying this will activate
+  the error reporting functionality in the output.  Use `DEFAULT` if you want to
+  use the default url, which is defined in the code as the variable
+  `DEFAULT_LSR_QEMU_REPORT_ERRORS_URL`, which has the default value of
+  [https://raw.githubusercontent.com/linux-system-roles/auto-maintenance/main/callback_plugins/lsr_report_errors.py](https://raw.githubusercontent.com/linux-system-roles/auto-maintenance/main/callback_plugins/lsr_report_errors.py)
+  otherwise, specify another url or local file to use.  The corresponding
+  environment variable is `LSR_QEMU_REPORT_ERRORS_URL`.
 
 Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
@@ -638,7 +645,7 @@ ansible-playbook --inventory inventory -e some_ansible_var="some ansible value" 
 # artifacts such as default_provisioner.log and the vm logs will go to /path/to/test2-artifacts
 ```
 then it will shutdown the VM.  If you want to leave the VM running for
-debugging, use `--debug` in the *last* entry in the batch file e.g.
+debugging, use `--debug` on the command line *and* in every entry in the batch file e.g.
 `--debug --log-file /path/to/testN.log ...`
 
 Use `--make-batch` to create a batch file using all of the files matching
