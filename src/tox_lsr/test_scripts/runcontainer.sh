@@ -364,10 +364,12 @@ run_playbooks() {
         run_buildah "$test_pb_base"
         # tmpdir hack: https://issues.redhat.com/browse/BIFROST-726
         echo "sut ansible_host=$container_id ansible_connection=buildah ansible_become=false ansible_remote_tmp=/tmp" > "$inv_file"
-        CONTAINER_SKIP_TAGS="${CONTAINER_SKIP_TAGS:-} --skip-tags tests::booted"
+        CONTAINER_SKIP_TAGS="${CONTAINER_SKIP_TAGS:-} --skip-tags tests::booted,tests::reboot"
     else
         run_podman "$test_pb_base"
         echo "sut ansible_host=$container_id ansible_connection=podman ansible_become=false" > "$inv_file"
+        # reboot does not work in systemd containers, it just stops them
+        CONTAINER_SKIP_TAGS="${CONTAINER_SKIP_TAGS:-} --skip-tags tests::reboot"
     fi
 
     if [ -z "$container_id" ]; then
