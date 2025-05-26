@@ -733,6 +733,10 @@ ansible-vault encrypt_string --vault-password-file tests/vault_pwd \
   --stdin-name sudo_password >> tests/vars/vault-variables.yml
 ```
 
+Do this to run bootc end-to-end tests which call
+[bootc-buildah-qcow.sh](./src/tox_lsr/test_scripts/bootc-buildah-qcow.sh),
+unless your system has passwordless sudo.
+
 Then if you run
 ```
 tox -e qemu-... -- --image-name name tests/tests_that_uses_my_secret_value.yml
