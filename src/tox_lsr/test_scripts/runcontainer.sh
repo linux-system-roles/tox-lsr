@@ -369,7 +369,7 @@ run_playbooks() {
         run_podman "$test_pb_base"
         echo "sut ansible_host=$container_id ansible_connection=podman ansible_become=false" > "$inv_file"
         # reboot does not work in systemd containers, it just stops them
-        CONTAINER_SKIP_TAGS="${CONTAINER_SKIP_TAGS:-} --skip-tags tests::reboot"
+        CONTAINER_SKIP_TAGS="${CONTAINER_SKIP_TAGS:-} --skip-tags tests::reboot,tests::bootc-e2e"
     fi
 
     if [ -z "$container_id" ]; then
@@ -384,6 +384,7 @@ run_playbooks() {
             # shellcheck disable=SC2086
             ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} ${EXTRA_SKIP_TAGS:-} \
                 -i "$inv_file" ${vault_args:-} \
+                -e lsr_scriptdir="$LSR_SCRIPTDIR" \
                 -e ansible_playbook_filepath="$(type -p ansible-playbook)" "$pb"
         done
     else
@@ -391,6 +392,7 @@ run_playbooks() {
             # shellcheck disable=SC2086
             ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} ${EXTRA_SKIP_TAGS:-} \
                 -i "$inv_file" ${vault_args:-} \
+                -e lsr_scriptdir="$LSR_SCRIPTDIR" \
                 -e ansible_playbook_filepath="$(type -p ansible-playbook)" \
                 "$pb"
         done
