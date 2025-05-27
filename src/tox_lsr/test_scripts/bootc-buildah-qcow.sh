@@ -72,6 +72,19 @@ else
     run_root() { "$@"; }
 fi
 
+# r/w bind-mounting the user storage to image-builder container destroys file permissions
+# Ideally we use the `--volume` `:O` (overlay) mode, which works fine for everything except CentOS 10
+# (https://github.com/osbuild/bootc-image-builder/issues/943). So do an expensive workaround
+# of copying the entire storage there.
+if [ -z "$AM_ROOT" ] && [ "${OS_RELEASE%platform:el10*}" != "$OS_RELEASE" ]; then
+    STORAGE_COPY="${STORAGE}.image-builder"
+    run_root cp -a "$STORAGE" "$STORAGE_COPY"
+    VOL_MODE="rw"
+    STORAGE="$STORAGE_COPY"
+else
+    VOL_MODE="O"
+fi
+
 # GitHub's runners create a $STORAGE/db.sql which contains the absolute storage path; that breaks
 # podman in the bootc-image-builder container. This is just a cache and can be removed safely
 if [ -z "$AM_ROOT" ] && [ -e "$STORAGE/db.sql" ]; then
@@ -86,7 +99,7 @@ fi
 # image-builder unfortunately needs $STORAGE to be writable, but that would destroy
 # permissions on the host; so mount it with a temp overlay
 run_root podman run --rm -i --privileged --security-opt=label=type:unconfined_t \
-    --volume="$STORAGE":/var/lib/containers/storage:O \
+    --volume="$STORAGE":/var/lib/containers/storage:"$VOL_MODE" \
     --volume=./tmp/bib.config.json:/config.json \
     --volume="$OUTPUT":/output \
     quay.io/centos-bootc/bootc-image-builder:latest \
@@ -99,4 +112,5 @@ if [ -z "$AM_ROOT" ]; then
     if [ -e "$STORAGE/db.sql.bak" ]; then
         mv "$STORAGE/db.sql.bak" "$STORAGE/db.sql"
     fi
+    [ -z "${STORAGE_COPY:-}" ] || run_root rm -rf "$STORAGE_COPY"
 fi
