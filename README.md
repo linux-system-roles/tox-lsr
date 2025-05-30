@@ -724,6 +724,19 @@ ansible-vault encrypt_string --vault-password-file tests/vault_pwd my_secret_val
 ansible-vault encrypt_string --vault-password-file tests/vault_pwd another_value \
   --name another_var >> tests/vars/vault-variables.yml
 ```
+
+To prevent sensitive content like your sudo password from being written into
+your `~/.bash_history`, you can also type the password on standard input:
+
+```
+ansible-vault encrypt_string --vault-password-file tests/vault_pwd \
+  --stdin-name sudo_password >> tests/vars/vault-variables.yml
+```
+
+Do this to run bootc end-to-end tests which call
+[bootc-buildah-qcow.sh](./src/tox_lsr/test_scripts/bootc-buildah-qcow.sh),
+unless your system has passwordless sudo.
+
 Then if you run
 ```
 tox -e qemu-... -- --image-name name tests/tests_that_uses_my_secret_value.yml
