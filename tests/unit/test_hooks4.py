@@ -32,7 +32,7 @@ from .utils import (
 
 DEFAULT_INI = {
     "tox": {
-        "envlist": "py{26,27,36,37,38,39,310,311}, black, pylint, flake8",
+        "envlist": "py{27,36,37,38,39,310,311,312,313}, black, pylint, flake8",
         "skip_missing_interpreters": "true",
     },
     "testenv": {
@@ -61,7 +61,7 @@ TOX_INI_MISSING_TOX_SECTION = {
 }
 TOX_INI_MISSING_TOX_SECTION_MERGED = {
     "tox": {
-        "envlist": "py{26,27,36,37,38,39,310,311}, black, pylint, flake8",
+        "envlist": "py{27,36,37,38,39,310,311,312,313}, black, pylint, flake8",
         "skip_missing_interpreters": "true",
     },
     "testenv": {
@@ -103,7 +103,7 @@ TOX_INI_OVERRIDE_DEFAULTS = {
 }
 TOX_INI_OVERRIDE_DEFAULTS_MERGED = {
     "tox": {
-        "envlist": "py{26,27,36,37,38,39,310,311}, black, pylint, flake8",
+        "envlist": "py{27,36,37,38,39,310,311,312,313}, black, pylint, flake8",
         "skip_missing_interpreters": "false",
         "skipsdist": "true",
     },
