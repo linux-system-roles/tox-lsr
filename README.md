@@ -388,6 +388,24 @@ To run `ansible-lint-collection` you must first convert to collection.
 > tox -e collection,ansible-lint-collection
 ```
 
+### Integration test setup
+
+Install the test dependencies:
+```sh
+sudo dnf install -y tox qemu-system-x86-core buildah podman
+```
+
+Download and install the [default image configuration](https://github.com/linux-system-roles/linux-system-roles.github.io/blob/main/download/linux-system-roles.json):
+```sh
+curl -s -L -o ~/.config/linux-system-roles.json \
+https://raw.githubusercontent.com/linux-system-roles/linux-system-roles.github.io/main/download/linux-system-roles.json
+```
+
+Finally make sure you installed tox-lsr as described above:
+```sh
+pip install --user git+https://github.com/linux-system-roles/tox-lsr@main
+```
+
 ### QEMU testing
 
 Integration tests are run using qemu/kvm using the test playbooks in the
@@ -402,18 +420,12 @@ arguments you provide.  Note that you must use `--` on the command line after
 the `-e qemu-ansible-core-2.N` so that `tox` will not attempt to interpret these
 as `tox` arguments:
 ```
-tox -e qemu-ansible-core-2.16 -- --image-name fedora-39 ...
+tox -e qemu-ansible-core-2.17 -- --image-name centos-10 ...
 ```
 You must provide one of `--image-file` or `--image-name`.
 
 The values for `--image-name` come from the config file passed to the `--config`
-argument below.  The source of the config file is
-https://github.com/linux-system-roles/linux-system-roles.github.io/blob/main/download/linux-system-roles.json.
-For convenience, download this file to your `~/.config` directory:
-```
-curl -s -L -o ~/.config/linux-system-roles.json \
-https://raw.githubusercontent.com/linux-system-roles/linux-system-roles.github.io/main/download/linux-system-roles.json
-```
+argument below, or if not given, the default config installed above.
 
 NOTE: By default, `qemu-ansible-2.9` will run Ansible from an EL7 container
 using podman, because it is not possible to recreate the EL7 Ansible 2.9
@@ -426,7 +438,7 @@ the tox-lsr repo.
   corresponding environment variable is `LSR_QEMU_IMAGE_FILE`.
 * `--image-name` - assuming you have a config file (`--config`) that maps the
   given image name to an image url and optional setup, you can just specify an
-  image name like `--image-name fedora-36` and the script will download the
+  image name like `--image-name centos-10` and the script will download the
   latest qcow2 compose image for Fedora to a local cache (`--cache`).  The
   script will check to see if the downloaded image in the cache is the latest,
   and will not download if not needed.  In the config file you can specify
@@ -478,7 +490,7 @@ the tox-lsr repo.
   the backing file.  This is useful when you want to pre-load a image for testing
   multiple test runs, but do not want to alter the original downloaded image e.g.
   pre-configuring package repos, pre-installing packages, etc.  This will create
-  a file called `$IMAGE_PATH.snap` e.g. `~/.cache/linux-system-roles/fedora-36.qcow2.snap`.
+  a file called `$IMAGE_PATH.snap` e.g. `~/.cache/linux-system-roles/centos-10.qcow2.snap`.
   The default is `false`.  The corresponding environment variable is
   `LSR_QEMU_USE_SNAPSHOT`.
 * `--wait-on-qemu` - This tells the script to wait for qemu to fully exit after
@@ -562,19 +574,19 @@ Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
 and playbooks, separate them with a `--` on the command line:
 ```
-tox -e qemu-ansible-core-2.16 -- --image-name fedora-36 --become --become-user root -- tests_default.yml
+tox -e qemu-ansible-core-2.17 -- --image-name centos-10 --become --become-user root -- tests/tests_default.yml
 ```
 This is because `runqemu` cannot tell the difference between an Ansible argument
 and a playbook.  If you do not have any ansible-playbook arguments, only
 playbooks, you can omit the `--`:
 ```
-tox -e qemu-ansible-core-2.16 -- --image-name fedora-36 tests_default.yml
+tox -e qemu-ansible-core-2.17 -- --image-name centos-10 tests/tests_default.yml
 ```
 If using `--collection`, it is assumed you used `tox -e collection` first.  Then
 specify the path to the test playbook inside this collection:
 ```
 tox -e collection
-tox -e qemu -- --image-name fedora-36 --collection .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
+tox -e qemu -- --image-name centos-10 --collection .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
 ```
 
 The config file looks like this:
@@ -582,7 +594,7 @@ The config file looks like this:
 {
     "images": [
     {
-      "name": "fedora-36",
+      "name": "centos-10",
       "compose": "https://kojipkgs.fedoraproject.org/compose/cloud/latest-Fedora-Cloud-36/compose/",
       "setup": [
         {
@@ -604,9 +616,9 @@ The config file looks like this:
 
 Example:
 ```
-tox -e qemu-ansible-core-2.16 -- --image-name fedora-36 tests/tests_default.yml
+tox -e qemu-ansible-core-2.17 -- --image-name centos-10 tests/tests_default.yml
 ```
-This will lookup `fedora-36` in your `~/.config/linux-system-roles.json`, will
+This will lookup `centos-10` in your `~/.config/linux-system-roles.json`, will
 check if it needs to download a new image to `~/.cache/linux-system-roles`, will
 create a setup playbook based on the `"setup"` section in the config, and will
 run `ansible-playbook` with `standard-inventory-qcow2` as the inventory script
@@ -651,7 +663,7 @@ debugging, use `--debug` on the command line *and* in every entry in the batch f
 Use `--make-batch` to create a batch file using all of the files matching
 `tests/tests_*.yml`, and run the tests.  This will create the files `batch.txt`
 and `batch.report` in the current directory.
-`tox -e qemu-ansible-core-2.15 -- --image-name centos-9 --log-level debug --make-batch --`
+`tox -e qemu-ansible-core-2.17 -- --image-name centos-10 --log-level debug --make-batch --`
 You must specify the trailing `--` on the command line to tell runqemu that
 there are no more arguments.  You can then edit the `batch.txt` file to remove
 files, change arguments, etc. and re-run using `--batch-file batch.txt`.
@@ -807,8 +819,8 @@ will be available as `~/.cache/linux-system-roles/$image_name-ostree.qcow2` You
 can test with the image like this:
 
 ```bash
-TEST_USE_OVMF=true tox -e qemu-ansible-core-2.15 -- \
-  --image-file ~/.cache/linux-system-roles/fedora-38-ostree.qcow2 \
+TEST_USE_OVMF=true tox -e qemu-ansible-core-2.17 -- \
+  --image-file ~/.cache/linux-system-roles/centos-10-ostree.qcow2 \
   --log-level debug tests/tests_default.yml
 ```
 
@@ -830,18 +842,18 @@ later VM.  You can use one of these environment variables:
 Examples:
 
 ```
-LSR_BUILD_IMAGE_USE_VM=true tox -e build_ostree_image -- centos-9
+LSR_BUILD_IMAGE_USE_VM=true tox -e build_ostree_image -- centos-10
 ```
 
 Will create a VM based on the default osbuildvm.mpp.yml, and use that to build
-the centos-9 image.
+the centos-10 image.
 
 ```
-LSR_BUILD_IMAGE_VM_DISTRO_FILE=/path/to/my/osbuildvm.mpp.yml tox -e build_ostree_image -- centos-9
+LSR_BUILD_IMAGE_VM_DISTRO_FILE=/path/to/my/osbuildvm.mpp.yml tox -e build_ostree_image -- centos-10
 ```
 
 Will create a VM based on the given osbuildvm.mpp.yml, and use that to build the
-centos-9 image.
+centos-10 image.
 
 #### .ostree directory
 
@@ -863,13 +875,13 @@ arguments you provide.  Note that you must use `--` on the command line after
 the `-e container-ansible-2.9` or `-e container-ansible-core-2.x` so that `tox` will not attempt to
 interpret these as `tox` arguments:
 ```
-tox -e container-ansible-core-2.15 -- --image-name fedora-36 ...
+tox -e container-ansible-core-2.17 -- --image-name centos-10 ...
 ```
 You must provide `--image-name`.
 
 * `--image-name` - assuming you have a config file (`--config`) that maps the
   given image name to a container registry image and optional setup, you can just specify an
-  image name like `--image-name fedora-38` and the script will pull the
+  image name like `--image-name centos-10` and the script will pull the
   latest image for Fedora 38.  In the config file you can specify
   additional setup steps to be run e.g. setting up additional dnf/yum repos.
   The corresponding environment variable is `CONTAINER_IMAGE_NAME`.
@@ -894,19 +906,19 @@ Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
 and playbooks, separate them with a `--` on the command line:
 ```
-tox -e container-ansible-core-2.15 -- --image-name fedora-38 --become --become-user root -- tests_default.yml
+tox -e container-ansible-core-2.17 -- --image-name centos-10 --become --become-user root -- tests/tests_default.yml
 ```
 This is because `tox` cannot tell the difference between an Ansible argument
 and a playbook.  If you do not have any ansible-playbook arguments, only
 playbooks, you can omit the `--`:
 ```
-tox -e container-ansible-core-2.15 -- --image-name fedora-38 tests_default.yml
+tox -e container-ansible-core-2.17 -- --image-name centos-10 tests/tests_default.yml
 ```
 If you want to test a collection, you must use `tox -e collection` first.  Then
 specify the path to the test playbook inside this collection:
 ```
 tox -e collection
-tox -e container-ansible-core-2.15 -- --image-name fedora-38 .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
+tox -e container-ansible-core-2.17 -- --image-name centos-10 .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
 ```
 
 The config file looks like this:
@@ -914,17 +926,36 @@ The config file looks like this:
 {
     "images": [
     {
-      "name": "centos-9",
-      "centoshtml": "https://cloud.centos.org/centos/9-stream/x86_64/images",
-      "container": "quay.io/centos/centos:stream9",
+      "name": "centos-10",
+      "source": "https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2",
+      "compose": "https://composes.stream.centos.org/stream-10/production/latest-CentOS-Stream/compose/",
+      "variant": "BaseOS",
+      "subvariant": "generic",
+      "container": "quay.io/centos/centos:stream10-development",
+      "openstack_image": "CentOS-10-x86_64-GenericCloud-released-latest",
+      "upload_results": true,
       "setup": [
         {
-          "name": "Enable HA repos",
+          "name": "Setup repos",
           "hosts": "all",
           "gather_facts": false,
+          "vars": {
+            "repourls": {
+              "centos-HighAvailability": "https://composes.stream.centos.org/stream-10/production/latest-CentOS-Stream/compose/HighAvailability/x86_64/os/"
+            }
+          },
           "tasks": [
-            { "name": "Enable HA repos",
-              "command": "dnf config-manager --set-enabled highavailability"
+            {
+              "name": "set up internal repositories",
+              "yum_repository": {
+                "name": "{{ item.key }}",
+                "description": "{{ item.key }}",
+                "baseurl": "{{ item.value }}",
+                "gpgcheck": false,
+                "file": "/etc/yum.repos.d/rhel.repo"
+              },
+              "no_log": true,
+              "loop": "{{ repourls | dict2items }}"
             }
           ]
         }
@@ -936,9 +967,9 @@ The config file looks like this:
 
 Example:
 ```
-tox -e container-ansible-core-2.15 -- --image-name centos-9 tests/tests_default.yml
+tox -e container-ansible-core-2.17 -- --image-name centos-10 tests/tests_default.yml
 ```
-This will lookup `centos-9` in your `~/.config/linux-system-roles.json`, check
+This will lookup `centos-10` in your `~/.config/linux-system-roles.json`, check
 if the local snapshot is more than `CONTAINER_AGE` hours old, if so will
 `podman pull` the `"container"` value, will create a local snapshot container of
 this, will create a setup playbook based on the `"setup"` section in the config,
