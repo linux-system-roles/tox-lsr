@@ -388,6 +388,24 @@ To run `ansible-lint-collection` you must first convert to collection.
 > tox -e collection,ansible-lint-collection
 ```
 
+### Integration test setup
+
+Install the test dependencies:
+```sh
+sudo dnf install -y tox qemu-system-x86-core buildah podman
+```
+
+Download and install the [default image configuration](https://github.com/linux-system-roles/linux-system-roles.github.io/blob/main/download/linux-system-roles.json):
+```sh
+curl -s -L -o ~/.config/linux-system-roles.json \
+https://raw.githubusercontent.com/linux-system-roles/linux-system-roles.github.io/main/download/linux-system-roles.json
+```
+
+Finally make sure you installed tox-lsr as described above:
+```sh
+pip install --user git+https://github.com/linux-system-roles/tox-lsr@main
+```
+
 ### QEMU testing
 
 Integration tests are run using qemu/kvm using the test playbooks in the
@@ -407,13 +425,7 @@ tox -e qemu-ansible-core-2.16 -- --image-name fedora-39 ...
 You must provide one of `--image-file` or `--image-name`.
 
 The values for `--image-name` come from the config file passed to the `--config`
-argument below.  The source of the config file is
-https://github.com/linux-system-roles/linux-system-roles.github.io/blob/main/download/linux-system-roles.json.
-For convenience, download this file to your `~/.config` directory:
-```
-curl -s -L -o ~/.config/linux-system-roles.json \
-https://raw.githubusercontent.com/linux-system-roles/linux-system-roles.github.io/main/download/linux-system-roles.json
-```
+argument below, or if not given, the default config installed above.
 
 NOTE: By default, `qemu-ansible-2.9` will run Ansible from an EL7 container
 using podman, because it is not possible to recreate the EL7 Ansible 2.9
