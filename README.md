@@ -574,13 +574,13 @@ Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
 and playbooks, separate them with a `--` on the command line:
 ```
-tox -e qemu-ansible-core-2.17 -- --image-name centos-10 --become --become-user root -- tests_default.yml
+tox -e qemu-ansible-core-2.17 -- --image-name centos-10 --become --become-user root -- tests/tests_default.yml
 ```
 This is because `runqemu` cannot tell the difference between an Ansible argument
 and a playbook.  If you do not have any ansible-playbook arguments, only
 playbooks, you can omit the `--`:
 ```
-tox -e qemu-ansible-core-2.17 -- --image-name centos-10 tests_default.yml
+tox -e qemu-ansible-core-2.17 -- --image-name centos-10 tests/tests_default.yml
 ```
 If using `--collection`, it is assumed you used `tox -e collection` first.  Then
 specify the path to the test playbook inside this collection:
@@ -906,13 +906,13 @@ Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
 and playbooks, separate them with a `--` on the command line:
 ```
-tox -e container-ansible-core-2.17 -- --image-name centos-10 --become --become-user root -- tests_default.yml
+tox -e container-ansible-core-2.17 -- --image-name centos-10 --become --become-user root -- tests/tests_default.yml
 ```
 This is because `tox` cannot tell the difference between an Ansible argument
 and a playbook.  If you do not have any ansible-playbook arguments, only
 playbooks, you can omit the `--`:
 ```
-tox -e container-ansible-core-2.17 -- --image-name centos-10 tests_default.yml
+tox -e container-ansible-core-2.17 -- --image-name centos-10 tests/tests_default.yml
 ```
 If you want to test a collection, you must use `tox -e collection` first.  Then
 specify the path to the test playbook inside this collection:
