@@ -590,21 +590,40 @@ tox -e qemu -- --image-name centos-10 --collection .tox/ansible_collections/fedo
 ```
 
 The config file looks like this:
-```
+```json
 {
     "images": [
     {
       "name": "centos-10",
-      "compose": "https://kojipkgs.fedoraproject.org/compose/cloud/latest-Fedora-Cloud-36/compose/",
+      "source": "https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2",
+      "compose": "https://composes.stream.centos.org/stream-10/production/latest-CentOS-Stream/compose/",
+      "variant": "BaseOS",
+      "subvariant": "generic",
+      "container": "quay.io/centos/centos:stream10-development",
+      "openstack_image": "CentOS-10-x86_64-GenericCloud-released-latest",
+      "upload_results": true,
       "setup": [
         {
-          "name": "Enable HA repos",
+          "name": "Setup repos",
           "hosts": "all",
-          "become": true,
           "gather_facts": false,
+          "vars": {
+            "repourls": {
+              "centos-HighAvailability": "https://composes.stream.centos.org/stream-10/production/latest-CentOS-Stream/compose/HighAvailability/x86_64/os/"
+            }
+          },
           "tasks": [
-            { "name": "Enable HA repos",
-              "command": "dnf config-manager --set-enabled ha"
+            {
+              "name": "set up internal repositories",
+              "yum_repository": {
+                "name": "{{ item.key }}",
+                "description": "{{ item.key }}",
+                "baseurl": "{{ item.value }}",
+                "gpgcheck": false,
+                "file": "/etc/yum.repos.d/rhel.repo"
+              },
+              "no_log": true,
+              "loop": "{{ repourls | dict2items }}"
             }
           ]
         }
@@ -919,50 +938,6 @@ specify the path to the test playbook inside this collection:
 ```
 tox -e collection
 tox -e container-ansible-core-2.17 -- --image-name centos-10 .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
-```
-
-The config file looks like this:
-```
-{
-    "images": [
-    {
-      "name": "centos-10",
-      "source": "https://cloud.centos.org/centos/10-stream/x86_64/images/CentOS-Stream-GenericCloud-10-latest.x86_64.qcow2",
-      "compose": "https://composes.stream.centos.org/stream-10/production/latest-CentOS-Stream/compose/",
-      "variant": "BaseOS",
-      "subvariant": "generic",
-      "container": "quay.io/centos/centos:stream10-development",
-      "openstack_image": "CentOS-10-x86_64-GenericCloud-released-latest",
-      "upload_results": true,
-      "setup": [
-        {
-          "name": "Setup repos",
-          "hosts": "all",
-          "gather_facts": false,
-          "vars": {
-            "repourls": {
-              "centos-HighAvailability": "https://composes.stream.centos.org/stream-10/production/latest-CentOS-Stream/compose/HighAvailability/x86_64/os/"
-            }
-          },
-          "tasks": [
-            {
-              "name": "set up internal repositories",
-              "yum_repository": {
-                "name": "{{ item.key }}",
-                "description": "{{ item.key }}",
-                "baseurl": "{{ item.value }}",
-                "gpgcheck": false,
-                "file": "/etc/yum.repos.d/rhel.repo"
-              },
-              "no_log": true,
-              "loop": "{{ repourls | dict2items }}"
-            }
-          ]
-        }
-      ]
-    },
-    ...
-}
 ```
 
 Example:
