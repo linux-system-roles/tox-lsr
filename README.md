@@ -993,3 +993,35 @@ NOTE: There seems to be a limitation on the number of containers that can be run
 in parallel.  In testing on my Fedora 36 laptop with 8 processors and lots of
 RAM, I can only run `3` at a time - using `4` will cause the containers to fail
 with `dbus` errors - not sure what the issue is.
+
+### Image mode testing
+
+Many roles [are being updated](https://issues.redhat.com/browse/RHEL-78157) to
+work during a bootc container image build to support
+[image mode](https://www.redhat.com/en/technologies/linux-platforms/enterprise-linux-10/image-mode).
+These are tagged with `containerbuild` in meta/main.yml. If you are working on
+a role and notice that container tests work, or you are fixing them, please add
+that tag -- that will automatically enable the corresponding tests.
+
+The image build phase tests work exactly like the general [container
+tests](#container-testing) above, except that it uses image names with a
+`-bootc` suffix, e.g. `--image-name centos-10-bootc`. Internally it will use
+[buildah](https://buildah.io/) instead of `podman` for a more realistic
+container build environment.
+
+Some of these tests do a complete end-to-end testing: During the container test
+run they call [`bootc-buildah-qcow.sh`](./src/tox_lsr/test_scripts/bootc-buildah-qcow.sh)
+to generate a QEMU qcow2 image from the container build. That uses
+[bootc-image-builder](https://github.com/osbuild/bootc-image-builder) which
+requires real root privileges; to run these locally, you need to put your sudo
+password into the [Ansible vault](#ansible-vault-support).
+
+The end-to-end tests produce a qcow image in `tests/tmp/`*testname*`/qcow2/disk.qcow2`.
+The validation phase ensures that running the role during container build
+actually has the desired effect in an image mode deployment. Run it through a
+QEMU environment, e.g.:
+
+```
+tox -e qemu-ansible-core-2.16 -- --image-file tests/tmp/tests_default/qcow2/disk.qcow2 \
+    -e __bootc_validation=true -- tests/tests_default.yml
+```
