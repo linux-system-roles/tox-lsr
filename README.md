@@ -439,7 +439,7 @@ the tox-lsr repo.
 * `--image-name` - assuming you have a config file (`--config`) that maps the
   given image name to an image url and optional setup, you can just specify an
   image name like `--image-name centos-10` and the script will download the
-  latest qcow2 compose image for Fedora to a local cache (`--cache`).  The
+  latest qcow2 compose image for CentOS 10 to a local cache (`--cache`).  The
   script will check to see if the downloaded image in the cache is the latest,
   and will not download if not needed.  In the config file you can specify
   additional setup steps to be run e.g. setting up additional dnf/yum repos.
@@ -882,7 +882,7 @@ You must provide `--image-name`.
 * `--image-name` - assuming you have a config file (`--config`) that maps the
   given image name to a container registry image and optional setup, you can just specify an
   image name like `--image-name centos-10` and the script will pull the
-  latest image for Fedora 38.  In the config file you can specify
+  latest image for CentOS 10.  In the config file you can specify
   additional setup steps to be run e.g. setting up additional dnf/yum repos.
   The corresponding environment variable is `CONTAINER_IMAGE_NAME`.
 * `--config` - default `$HOME/.config/linux-system-roles.json` - this is the
