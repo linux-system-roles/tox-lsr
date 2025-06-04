@@ -883,13 +883,18 @@ packages to build into the image.
 
 ### Container testing
 
-Integration tests can be run using containers.  `tox` will start one or
-more containers for the managed nodes using `podman` and the Ansible `podman` connection
-plugin.  There are some test envs that can be used to run these
-tests:
-* `container-ansible-2.9` - tests against Ansible 2.9
-  * also uses jinja 2.7 if supported by the python used
-* `container-ansible-core-2.x` - tests against ansible-core 2.x
+Integration tests can be run using containers. Some roles support it officially
+and run container tests in CI; these are tagged with `container` in
+meta/main.yml. If you are working on a role and notice that container tests
+work, or you are fixing them, please add that tag -- that will automatically
+enable the corresponding tests.
+
+`tox` will start one or more containers for the managed nodes using `podman`
+and the Ansible `podman` connection plugin.  There are some test envs that can
+be used to run these tests:
+* `container-ansible-2.9` - tests against Ansible 2.9 also uses jinja 2.7 if
+* supported by the python used `container-ansible-core-2.x` - tests against
+* ansible-core 2.x
 
 These tests run in one of two modes, depending on which of the following
 arguments you provide.  Note that you must use `--` on the command line after
