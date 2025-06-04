@@ -764,6 +764,8 @@ ansible-vault encrypt_string --vault-password-file tests/vault_pwd \
   --stdin-name sudo_password >> tests/vars/vault-variables.yml
 ```
 
+Type the password and press Control-D.
+
 Do this to run bootc end-to-end tests which call
 [bootc-buildah-qcow.sh](./src/tox_lsr/test_scripts/bootc-buildah-qcow.sh),
 unless your system has passwordless sudo.
