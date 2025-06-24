@@ -66,7 +66,7 @@ install_requirements() {
         save_tar="$WORKDIR/save.tar"
         tar cfP "$save_tar" -C "$coll_path" "$LOCAL_COLLECTION"
     fi
-    for rq in meta/requirements.yml meta/collection-requirements.yml; do
+    for rq in meta/requirements.yml meta/collection-requirements.yml tests/collection-requirements.yml; do
         if [ -f "$rq" ]; then
             if [ "$rq" = meta/requirements.yml ]; then
                 warning use meta/collection-requirements.yml instead of "$rq"
