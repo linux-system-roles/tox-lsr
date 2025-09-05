@@ -56,7 +56,7 @@ cp -a "$src_ac_dir" "$dest_coll_dir"
 cd "$dest_coll_dir/ansible_collections/$LSR_ROLE2COLL_NAMESPACE/$LSR_ROLE2COLL_NAME"
 
 if [ "${LSR_ANSIBLE_TEST_DOCKER:-false}" = true ]; then
-  ansible-test sanity --docker 2>&1 | ansible_test_filter
+  ansible-test sanity --docker "$@" 2>&1 | ansible_test_filter
   exit 0
 fi
 

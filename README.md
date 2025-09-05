@@ -401,6 +401,10 @@ curl -s -L -o ~/.config/linux-system-roles.json \
 https://raw.githubusercontent.com/linux-system-roles/linux-system-roles.github.io/main/download/linux-system-roles.json
 ```
 
+If you have any additional images defined in a separate file, download that file
+to `~/.config/extra-images.json`.  This is the default file location used by the
+`extra_images_file` setting in `~/.config/linux-system-roles.json`.
+
 Finally make sure you installed tox-lsr as described above:
 ```sh
 pip install --user git+https://github.com/linux-system-roles/tox-lsr@main

@@ -570,11 +570,29 @@ def make_setup_yml(
 def get_image_config(args):
     """Get the image to use."""
     images = {}
+    extra_images_not_found = False
 
     if args.config != "NONE":
         with open(args.config) as configfile:
             config = json.load(configfile)
             images = config["images"]
+            if "extra_images_file" in config:
+                extra_images_file = config["extra_images_file"]
+                if not os.path.isabs(extra_images_file):
+                    extra_images_file = os.path.join(
+                        os.path.dirname(args.config), extra_images_file
+                    )
+                try:
+                    with open(extra_images_file) as ff:
+                        extra_images = json.load(ff)
+                        images.extend(extra_images["images"])
+                except IOError as ioe:
+                    logging.debug(
+                        "Could not read extra images file %s: %s",
+                        extra_images_file,
+                        exc_info=ioe,
+                    )
+                    extra_images_not_found = True
 
     if args.image_name:
         image = get_image(images, args.image_name)
@@ -584,6 +602,10 @@ def get_image_config(args):
                 args.image_name,
                 args.config,
             )
+            if extra_images_not_found:
+                logging.critical(
+                    "Extra images file %s not found", extra_images_file
+                )
             sys.exit(1)
     else:
         image = {
