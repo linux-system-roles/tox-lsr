@@ -241,7 +241,7 @@ yaml.safe_dump(val, open(sys.argv[2], "w"))
     fi
     if [ -s "${setup_yml}" ]; then
         # shellcheck disable=SC2086
-        if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
+        if ! ansible-playbook "${VERBOSITY:--vv}" ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
             "$setup_yml"; then
             return 1
         fi
@@ -258,7 +258,7 @@ yaml.safe_dump(val, open(sys.argv[2], "w"))
     fi
     if [ -f "${CONTAINER_TESTS_PATH}/setup-snapshot.yml" ]; then
         # shellcheck disable=SC2086
-        if ! ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
+        if ! ansible-playbook "${VERBOSITY:--vv}" ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
             "${CONTAINER_TESTS_PATH}/setup-snapshot.yml"; then
             return 1
         fi
@@ -382,7 +382,7 @@ run_playbooks() {
     if [ "$PARALLEL" -gt 0 ]; then
         for pb in "${test_pbs[@]}"; do
             # shellcheck disable=SC2086
-            ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} ${EXTRA_SKIP_TAGS:-} \
+            ansible-playbook "${VERBOSITY:--vv}" ${CONTAINER_SKIP_TAGS:-} ${EXTRA_SKIP_TAGS:-} \
                 -i "$inv_file" ${vault_args:-} \
                 -e lsr_scriptdir="$LSR_SCRIPTDIR" \
                 -e ansible_playbook_filepath="$(type -p ansible-playbook)" "$pb"
@@ -390,7 +390,7 @@ run_playbooks() {
     else
         for pb in "${test_pbs[@]}"; do
             # shellcheck disable=SC2086
-            ansible-playbook -vv ${CONTAINER_SKIP_TAGS:-} ${EXTRA_SKIP_TAGS:-} \
+            ansible-playbook "${VERBOSITY:--vv}" ${CONTAINER_SKIP_TAGS:-} ${EXTRA_SKIP_TAGS:-} \
                 -i "$inv_file" ${vault_args:-} \
                 -e lsr_scriptdir="$LSR_SCRIPTDIR" \
                 -e ansible_playbook_filepath="$(type -p ansible-playbook)" \
@@ -477,6 +477,8 @@ while [ -n "${1:-}" ]; do
         --extra-skip-tag)
             shift
             EXTRA_SKIP_TAGS="--skip-tags $1 $EXTRA_SKIP_TAGS" ;;
+        -v*)
+            VERBOSITY="$1" ;;
         --*) # unknown option
             echo "Unknown option $1"
             exit 1 ;;
