@@ -33,17 +33,25 @@ rm -rf tmp
 OUTPUT="./tmp/$BUILDAH_ID"
 mkdir -p "$OUTPUT"
 
-cat <<EOF > tmp/bib.config.json
-{
-    "blueprint": {
-        "customizations": {
-            "user": [
-                {"name": "root", "password": "foobar", "key": "$PUBKEY"}
-            ]
-        }
-    }
-}
-EOF
+# merge role customizations into the config
+python3 -c 'import sys, os, yaml, json
+pubkey = sys.argv[1]
+cfg = {"blueprint": {"customizations": {"user": [{"name": "root", "password": "foobar", "key": pubkey}]}}}
+if os.path.exists("osbuild_config.yml"):
+    with open("osbuild_config.yml", "r") as f:
+        user_cfg = yaml.safe_load(f)
+    if "blueprint" in user_cfg:
+        users = user_cfg["blueprint"].get("customizations", {}).get("user", [])
+    elif "customizations" in user_cfg:
+        users = user_cfg["customizations"].get("user", [])
+    rootuser = [u for u in users if u["name"] == "root"]
+    if rootuser:
+        print("ERROR: cannot override root user in osbuild_config.yml")
+        sys.exit(1)
+    cfg["blueprint"]["customizations"]["user"].extend(users)
+with open("tmp/bib.config.json", "w") as f:
+    json.dump(cfg, f)
+' "$PUBKEY"
 
 # for local development, support adding "sudo_password" to the vault, see README.md
 # not necessary for e.g. GitHub actions which has passwordless sudo
@@ -51,7 +59,7 @@ if [ -e vault_pwd ] && [ -e vars/vault-variables.yml ]; then
     export SUDO_ASKPASS="$MYDIR/vault-sudo-askpass.sh"
 fi
 
-# boot-cimage-builder must be run as root container; also support breaking out of toolbox
+# bootc-image-builder must be run as root container; also support breaking out of toolbox
 AM_ROOT=
 if systemd-detect-virt --quiet --container; then
     if [ -n "${SUDO_ASKPASS:-}" ]; then
