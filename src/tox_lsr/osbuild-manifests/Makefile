@@ -39,6 +39,9 @@ EXTRA_MPP_ARGS= # For internal use
 ifdef OSTREE_REPO
 EXTRA_MPP_ARGS +=-D ostree_parent_refs='$(shell tools/ot-refs $(OSTREE_REPO))'
 endif
+ifdef EXTRA_REPOS
+EXTRA_MPP_ARGS +=-D extra_repos='$(EXTRA_REPOS)'
+endif
 
 export CHECKPOINTS=build
 IMAGETYPES := regular ostree
@@ -129,7 +132,9 @@ $(BUILDDIR):
 # $5 == Arch
 define json-rule
 $(BUILDDIR)/$(call image-name,$1,$2,$3,$4,$5).json: $2 $(BUILDDIR)
-	$(OSBUILD_MPP) -D $(if $(EXTRA_DISTRO),distro_dir="\"$(dir $(EXTRA_DISTRO))\"",distro_dir="\"distro\"") -I . -D image_type="\"$($4_IMAGETYPE)\"" -D arch=\"$5\" -D distro_name="\"$1\"" -D target="\"$3\"" $(DEFINES_ARGS) $(EXTRA_MPP_ARGS) $(MPP_ARGS) $$< $$@
+	$(OSBUILD_MPP) -D $(if $(EXTRA_DISTRO),distro_dir="\"$(dir $(EXTRA_DISTRO))\"",distro_dir="\"distro\"") -I . \
+	-D image_type="\"$($4_IMAGETYPE)\"" -D arch=\"$5\" -D distro_name="\"$1\"" -D target="\"$3\"" \
+	$(DEFINES_ARGS) $(EXTRA_MPP_ARGS) $(MPP_ARGS) $$< $$@
 .PHONY: $(BUILDDIR)/$(call image-name,$1,$2,$3,$4,$5).json
 endef
 
