@@ -588,7 +588,7 @@ def get_image_config(args):
                         images.extend(extra_images["images"])
                 except IOError as ioe:
                     logging.debug(
-                        "Could not read extra images file %s: %s",
+                        "Could not read extra images file %s",
                         extra_images_file,
                         exc_info=ioe,
                     )
