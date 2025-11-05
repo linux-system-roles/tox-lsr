@@ -1,0 +1,1263 @@
+#!/usr/bin/python3
+
+# SPDX Licence identifier MIT
+# Copyright (c) 2017-2018 Red Hat Inc.
+# Authors: Merlin Mathesius <merlinm@redhat.com>
+#          Andrei Stepanov <astepano@redhat.com>
+#          Bruno Goncalves <bgoncalv@redhat.com>
+
+import argparse
+import copy
+import errno
+import functools
+import json
+import logging
+import os
+import platform
+import random
+import re
+import shlex
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+
+import yaml
+
+try:
+    ProcessLookupError
+except NameError:
+    ProcessLookupError = OSError
+
+
+IDENTITY = """-----BEGIN OPENSSH PRIVATE KEY-----
+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
+b3RlLmNzYgECAwQF
+-----END OPENSSH PRIVATE KEY-----
+"""
+AUTH_KEY = (
+    "AAAAB3NzaC1yc2EAAAADAQABAAABgQDF6DLa+l+ikW2PbJ8v++ooNjOYrzCDm1MRnz"
+    "cs283W6u/3BYq2fejQ3xvtyh8rhMbqWdL89XlWs8yjdVgIAAoK1zbqEOM8N8IB5wBR"
+    "o7dTIvtsc9/dIOEXSSBX5W2T6hGA/G6S1bsOrEFFnGiqWo16T99tsr8eR2ytgqFwaO"
+    "9XO3mn2cEVkh0N0u57ls5/maGFipdW9GzLLL9AfQgfJaok90ZLm+2V0Qs3guZEjE75"
+    "vSRHf5I1+leTHfUUbj0U984DYqQ3oaWQYjqaBX4wQu9ITSHPDOQ0HPKK1QL+7ar1Cr"
+    "PwBaetqh7CMNr0fQiBQpHzsn7Mqy4XjCSUSLu2y6t/QHw48vj8jtaIbkV9g0eZJ3IN"
+    "2oxKxx5Im0bInR0HN2pEKNKTu0btuASJKENFQzTRYDLVLfGPNCHbhox05bc0yxjrAs"
+    "ngh0KW+aiqAEl6ld0SDijew0OQsegtEVTY4UUG5ms1RMixKnrxRCZDd0XEtkY+UyEk"
+    "8nEnXt1JJ97MgHU="
+)
+DEF_USER = "root"
+DEF_PASSWD = "foobar"
+DEF_HOST = "127.0.0.3"
+# configure sshd to use UseDNS no to fix broken EL7 systems
+BOOTCMD_SSHD_USEDNS_NO = """ - |
+    if grep -q '^UseDNS' /etc/ssh/sshd_config; then
+      sed 's/^UseDNS.*$/UseDNS no/' -i /etc/ssh/sshd_config
+    elif grep -q '^#UseDNS' /etc/ssh/sshd_config; then
+      sed 's/^#UseDNS.*$/UseDNS no/' -i /etc/ssh/sshd_config
+    else
+      echo "UseDNS no" >> /etc/ssh/sshd_config
+    fi
+"""
+BOOTCMD_DISABLE_IPV6 = """ - |
+    {
+    echo "net.ipv6.conf.all.disable_ipv6 = 1"
+    echo "net.ipv6.conf.default.disable_ipv6 = 1"
+    } > /etc/sysctl.d/70-disable-ipv6.conf
+    sysctl -p /etc/sysctl.d/70-disable-ipv6.conf
+"""
+USER_DATA = """#cloud-config
+debug:
+  verbose: true
+  output: /var/log/cloud-init-debug.log
+users:
+  - default
+  - name: {0}
+    ssh_authorized_keys:
+      - ssh-rsa {2} standard-test-qcow2
+ssh_pwauth: True
+chpasswd:
+  list: |
+    {0}:{1}
+  expire: False
+""".format(
+    DEF_USER, DEF_PASSWD, AUTH_KEY
+)
+EMPTY_INVENTORY = {}
+LOG_FILE = "default_provisioners.log"
+
+
+def strtobool(val):
+    """Convert a string representation of truth to true (1) or false (0).
+
+    True values are 'y', 'yes', 't', 'true', 'on', and '1'; false values
+    are 'n', 'no', 'f', 'false', 'off', and '0'.  Raises ValueError if
+    'val' is anything else.
+    """
+    val = val.lower()
+    if val in ("y", "yes", "t", "true", "on", "1"):
+        return 1
+    elif val in ("n", "no", "f", "false", "off", "0"):
+        return 0
+    else:
+        raise ValueError("invalid truth value %r" % (val,))
+
+
+class AdditionalDrives(object):
+    """Prepare additional drives options for qemu.  Based on FMF config creates
+    temporary sparse files and returns corresponding qemu command options.
+    cleanup() will be called eventually to close the files.
+    """
+
+    _tempfiles = list()
+
+    @classmethod
+    def generate(cls, supported_devices, skip_missing_device):
+        """Generate sparse files and return drive qemu options
+        Returns
+        -------
+        list of str
+                qemu -drive options
+        """
+        result = []
+        drives = fmf_get(["qemu", "drive"], list())
+        dev_id = 0
+        scsi_device_exists = False
+        for drive in drives:
+            # create temporary sparse file
+            size = int(drive.get("size", 2 * 1024**3))  # default size: 2G
+            path = drive.get("path", None)
+            path = str(path) if path is not None else None
+            interface = drive.get("interface", None)
+            drive_file = tempfile.NamedTemporaryFile(dir=path, delete=False)
+            drive_file.truncate(size)
+            cls._tempfiles.append(drive_file)
+            logger.info("Created temporary sparse file '%s'.", drive_file.name)
+            # translate data into qemu command options
+
+            if interface is None or interface.lower() == "virtio":
+                result += [
+                    "-drive",
+                    "file=%s,media=disk,if=virtio,format=raw"
+                    % drive_file.name,
+                ]
+            elif interface.lower() == "nvme":
+                if "nvme" in supported_devices:
+                    result += [
+                        "-device",
+                        "nvme,drive=nvme%s,serial=def%s" % (dev_id, dev_id),
+                    ]
+                    result += [
+                        "-drive",
+                        "file=%s,media=disk,if=none,id=nvme%s,format=raw"
+                        % (drive_file.name, dev_id),
+                    ]
+                    dev_id += 1
+                elif not skip_missing_device:
+                    raise Exception(
+                        "Cannot use device of size '%d' - no NVMe support on this platform"
+                        % size
+                    )
+                else:
+                    logger.warn(
+                        "NVMe drive of size '%d' will be skipped - no NVMe support on this platform",
+                        size,
+                    )
+            elif interface.lower() == "scsi":
+                if "scsi" in supported_devices:
+                    if not scsi_device_exists:
+                        result += ["-device", "virtio-scsi-pci,id=scsi0"]
+                        scsi_device_exists = True
+                    result += [
+                        "-device",
+                        "scsi-hd,drive=drive%s,bus=scsi0.0" % dev_id,
+                    ]
+                    result += [
+                        "-drive",
+                        "if=none,file=%s,id=drive%s,format=raw"
+                        % (drive_file.name, dev_id),
+                    ]
+                    dev_id += 1
+                elif not skip_missing_device:
+                    raise Exception(
+                        "Cannot use device of size '%d' - no SCSI support on this platform"
+                        % size
+                    )
+                else:
+                    logger.warn(
+                        "SCSI drive of size '%d' will be skipped - no SCSI support on this platform",
+                        size,
+                    )
+
+        usb_drives = fmf_get(["qemu", "usb_drive"], list())
+        if usb_drives:
+            # there is at least 1 usb device, enable usb hub
+            result += ["-usb"]
+        usb_id = 0
+        for usb_drive in usb_drives:
+            usb_id += 1
+            # create temporary sparse file
+            size = int(usb_drive.get("size", 1 * 1024**3))  # default size: 1G
+            path = usb_drive.get("path", None)
+            path = str(path) if path is not None else None
+            usb_drive_file = tempfile.NamedTemporaryFile(
+                dir=path, suffix=".img", prefix="usb_storage", delete=False
+            )
+            usb_drive_file.truncate(size)
+            cls._tempfiles.append(usb_drive_file)
+            logger.info(
+                "Created temporary sparse file '%s'.", usb_drive_file.name
+            )
+            # translate data into qemu command options
+            result += [
+                "-drive",
+                "id=str_usb_storage_%s,file=%s,if=none,format=raw"
+                % (usb_id, usb_drive_file.name),
+                "-device",
+                "usb-storage,drive=str_usb_storage_%s" % usb_id,
+            ]
+
+        return result
+
+    @classmethod
+    def cleanup(cls):
+        """Close all temporary files created by this class"""
+        for drive_file in cls._tempfiles:
+            fullname = drive_file.name
+            logger.info(
+                "Closing and removing temporary sparse file '%s'", fullname
+            )
+            if os.path.isfile(fullname):
+                drive_file.close()
+                # just close the file doesn't make sure it gets deleted
+                try:
+                    os.remove(fullname)
+                except OSError:
+                    pass
+
+
+def print_bad_inventory():
+    """Print bad inventory on any uncatched exception. This will prevent
+    running playbook on localhost.
+    """
+    fake_host = "fake_host"
+    fake_hostname = "standard-inventory-qcow2_failed_check_logs"
+    hosts = [fake_host]
+    bad_inv = {
+        "localhost": {"hosts": hosts, "vars": {}},
+        "subjects": {"hosts": hosts, "vars": {}},
+        "_meta": {"hostvars": {fake_host: {"ansible_host": fake_hostname}}},
+    }
+    sys.stdout.write(json.dumps(bad_inv, indent=4, separators=(",", ": ")))
+
+
+# See https://stackoverflow.com/questions/377017/test-if-executable-exists-in-python/377028#377028
+def which(executable, default=None):
+    def is_exe(fpath):
+        return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
+
+    fpath, _ = os.path.split(executable)
+    if fpath:
+        if is_exe(executable):
+            return executable
+    else:
+        for path in os.environ["PATH"].split(os.pathsep):
+            exe_file = os.path.join(path, executable)
+            if is_exe(exe_file):
+                return exe_file
+    return default
+
+
+def get_artifact_path(path=""):
+    """Return path to an artifact file in artifacts directory. If path == ""
+    than return path artifacts dir.  Create artifacts dir if necessary.
+    """
+    artifacts = os.environ.get(
+        "TEST_ARTIFACTS", os.path.join(os.getcwd(), "artifacts")
+    )
+    try:
+        os.makedirs(artifacts)
+    except OSError as exc:
+        if exc.errno != errno.EEXIST or not os.path.isdir(artifacts):
+            raise
+    return os.path.join(artifacts, path)
+
+
+def inv_list(opts):
+    hosts = []
+    variables = {}
+    args = opts.__dict__
+    for ii, subject in enumerate(opts.subjects):
+        args["host"] = subject
+        if len(opts.hostalias) > ii:
+            args["hostalias"] = opts.hostalias[ii]
+        else:
+            args["hostalias"] = None
+        if len(opts.yum_cache_path) > ii:
+            args["yum_cache_path"] = opts.yum_cache_path[ii]
+        else:
+            args["yum_cache_path"] = None
+        if len(opts.yum_varlib_path) > ii:
+            args["yum_varlib_path"] = opts.yum_varlib_path[ii]
+        else:
+            args["yum_varlib_path"] = None
+        args["hostalias"] = image_to_alias(
+            subject, args["hostalias"], opts.use_basename
+        )
+        logger.info(
+            "image %(host)s alias %(hostalias)s yum_cache_path %(yum_cache_path)s yum_varlib_path %(yum_varlib_path)s",
+            args,
+        )
+        host_vars = inv_host(args)
+        if host_vars:
+            hosts.append(args["hostalias"])
+            variables[args["hostalias"]] = host_vars
+    if not hosts:
+        return EMPTY_INVENTORY
+    return {
+        "localhost": {"hosts": hosts, "vars": {}},
+        "subjects": {"hosts": hosts, "vars": {}},
+        "_meta": {"hostvars": variables},
+    }
+
+
+def get_qemu_smp_arg():
+    """Determine the number of CPUs that should be visible in the guest.
+    See e.g. https://www.redhat.com/archives/libvirt-users/2017-June/msg00025.html
+    We want to match the number of host physical cores, or to go with the value
+    provided explicitly via the STR_CPU_LIMIT environment variable.
+    """
+    if os.environ.get("STR_CPU_LIMIT"):
+        sockets = os.environ.get("STR_CPU_LIMIT")
+    else:
+        # We may be run in a cgroup with fewer cores available than physical.
+        available_cpu = int(subprocess.check_output(["nproc"]).strip())
+        # https://stackoverflow.com/questions/6481005/how-to-obtain-the-number-of-cpus-cores-in-linux-from-the-command-line
+        core_sockets = set()
+        for line in subprocess.check_output(
+            ["lscpu", "-b", "-p=Core,Socket"], universal_newlines=True
+        ).split("\n"):
+            if line.startswith("#"):
+                continue
+            core_sockets.add(line.strip())
+        sockets = min(available_cpu, len(core_sockets))
+    return "{},sockets={},cores=1,threads=1".format(sockets, sockets)
+
+
+def write_debug_inventory(file_, host_vars):
+    raw_inventory = {
+        "all": {
+            "children": {
+                "localhost": {"hosts": host_vars},
+                "subjects": {"hosts": host_vars},
+            }
+        }
+    }
+    with open(file_, "w") as ofile:
+        inventory = yaml.dump(raw_inventory, default_flow_style=False)
+        ofile.write(inventory)
+    return inventory
+
+
+def get_provision_fmf():
+    """Return contents of provision.fmf in dict format."""
+    for dir in [".", "tests"]:
+        provision_fmf = os.path.join(dir, "provision.fmf")
+        if os.path.exists(provision_fmf):
+            with open(provision_fmf) as fd:
+                return yaml.safe_load(fd)
+    return {}
+
+
+def fmf_get(path, default=None):
+    """Return parameter from FMF at desired path or default.
+
+    Parameters
+    ----------
+    path: dict
+        List of strings. Strings form a path for looking parameter.
+    default: str
+        Function ignores this parameter.
+
+    Returns
+    -------
+    str
+        Found parameter in FMF or `default`.
+
+    """
+    tree = get_provision_fmf()
+    logger.info("fmf_get path %s tree %s", path, tree)
+    if not tree:
+        return default
+    subtree = tree.get("standard-inventory-qcow2", {})
+    for item in path:
+        subtree = subtree.get(item)
+        if subtree is None:
+            return default
+        if not isinstance(subtree, dict):
+            return subtree
+    return default
+
+
+qemu_device_output = ""
+
+
+def qemu_supports_device(qemu_path, device):
+    global qemu_device_output
+    if not qemu_device_output:
+        rc = subprocess.check_output(
+            [qemu_path, "-device", "?"],
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+        )
+        qemu_device_output = rc
+    return (
+        re.search(r'^name "%s",' % device, qemu_device_output, re.M)
+        is not None
+    )
+
+
+def start_qemu(args, portrange=(2222, 5555)):
+    for _ in range(10):
+        port = random.randint(*portrange)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((DEF_HOST, port))
+        except IOError:
+            pass
+        else:
+            break
+        finally:
+            sock.close()
+    else:
+        raise RuntimeError("unable to find free local port to map SSH to")
+    # Log all traffic received from the guest to a file.
+    log_file = "{0}.guest.log".format(os.path.basename(args["host"]))
+    log_guest = get_artifact_path(log_file)
+    # Log from qemu itself.
+    log_qemu = log_guest.replace(".guest.log", ".qemu.log")
+    # Parameters from FMF:
+    param_m = str(fmf_get(["qemu", "m"], "2048"))
+    param_net_nic_model = str(fmf_get(["qemu", "net_nic", "model"], "virtio"))
+    qemu_net_nics = []
+    for model in fmf_get(["qemu", "net_nic_list"], []):
+        qemu_net_nics.extend(["-net", "nic,netdev=n1,model=" + model])
+    # QEMU -M param.
+    # Most architectures do not need a -M flag, defaults are fine
+    qemu_M_param = []
+    # List of firmwares QEMU needs to work.
+    qemu_firmwares = []
+    # Common QEMU parameters used both to run VM and virtio-rng probing.
+    qemu_common_params = [
+        # Pass through CPU model of host
+        "-cpu",
+        "host",
+        # Enable KVM full virtualization support
+        "-enable-kvm",
+        # Do not display video output
+        "-display",
+        "none",
+    ]
+
+    # Add platform specific settings:
+    if "ppc" in platform.machine():
+        # Disable VGA card to avoid crash on ppc with PR
+        # https://lists.gnu.org/archive/html/qemu-devel/2018-05/msg07070.html
+        qemu_common_params += ["-vga", "none"]
+
+    if platform.machine() == "aarch64":
+        # Emulate the same generic interrupt controller as the host system has
+        qemu_M_param = ["-M", "virt,gic_version=host"]
+        # Add AAVMF firmware (without this, qemu-kvm will not work on ARM)
+        qemu_firmwares.extend(
+            [
+                "-drive",
+                "%s,%s,%s,%s,%s"
+                % (
+                    "file=/usr/share/AAVMF/AAVMF_CODE.fd",
+                    "if=pflash",
+                    "format=raw",
+                    "unit=0",
+                    "readonly=on",
+                ),
+            ]
+        )
+    # Include -M param and firmwares to common params:
+    qemu_common_params.extend(qemu_M_param)
+    qemu_common_params.extend(qemu_firmwares)
+    # Lookup for qemu:
+    qemu_env = os.environ.get("QEMU_CMD")
+    if qemu_env:
+        path_lookups = [qemu_env]
+    else:
+        path_lookups = []
+    path_lookups.extend(
+        ["qemu-kvm", "/usr/libexec/qemu-kvm", "/usr/bin/qemu-system-x86_64"]
+    )
+    for qemu_cmd in path_lookups:
+        qemu_path = which(qemu_cmd)
+        if qemu_path:
+            break
+
+    # Try to probe virtio-rng device:
+    # virtio-rng-pci: https://wiki.qemu.org/Features/VirtIORNG
+    virtio_rng = []
+    for x in ["virtio-rng", "virtio-rng-pci", "virtio-rng-ccw"]:
+        if qemu_supports_device(qemu_path, x):
+            virtio_rng = ["-device", x]
+            break
+    if virtio_rng:
+        logger.info("qemu-kvm is using %s device" % virtio_rng[1])
+    # check for supported devices
+    # - key is the name used in provision.fmf
+    # - value is the name used by qemu
+    supported_devices = {"nvme": "nvme", "scsi": "virtio-scsi-pci"}
+    for name, qemu_name in list(supported_devices.items()):
+        if not qemu_supports_device(qemu_path, qemu_name):
+            del supported_devices[name]
+
+    # Assemble QEMU command with its parameters:
+    if args["write_to_image"]:
+        snapshot = []
+        cacheopt = ",cache=none"
+    else:
+        # Write to temporary files instead of disk image files
+        snapshot = ["-snapshot"]
+        cacheopt = ""
+    qemu_cmd = (
+        [
+            qemu_path
+            # Add common parameters
+        ]
+        + qemu_common_params
+        + [
+            # Simulate SMP system with get_qemu_smp_arg() CPUs
+            "-smp",
+            get_qemu_smp_arg(),
+            # Set startup RAM size
+            "-m",
+            param_m,
+            # Add image with OS as drive
+            "-drive",
+            "if=none,file=%s,id=virtio-disk0%s" % (args["host"], cacheopt),
+            "-device",
+            "virtio-blk-pci,drive=virtio-disk0,bootindex=1",
+            # Use `cloudinit` as CD-ROM image
+            "-cdrom",
+            args["cloudinit"],
+            # Configure a host network backend
+            "-netdev",
+            "user,id=n0,hostfwd=tcp:127.0.0.3:{0}-:22,ipv6=off".format(port),
+            "-netdev",
+            "user,id=n1,net=10.0.3.0/24,dhcpstart=10.0.3.16,restrict=on,ipv6=off",
+            # Configure/create an on-board (or machine default) NIC
+            "-net",
+            "nic,netdev=n0,model=%s" % param_net_nic_model,
+            # Add a source of randomness
+        ]
+        + virtio_rng
+        + qemu_net_nics
+        + snapshot
+        + [
+            # Let the RTC start at the current UTC
+            "-rtc",
+            "base=utc",
+            # Connect the virtual serial port with pts2
+            "-serial",
+            "chardev:pts2",
+            # Log all traffic received from the guest to log_quest
+            "-chardev",
+            "file,id=pts2,path=" + log_guest,
+        ]
+    )
+    if args["yum_cache_path"]:
+        if isinstance(args["yum_cache_path"], list):
+            args["yum_cache_path"] = args["yum_cache_path"][0]
+        if not os.path.isfile(args["yum_cache_path"]):
+            size = args["yum_cache_size"] * 1024**3
+            ff = open(args["yum_cache_path"], "w")
+            ff.truncate(size)
+            ff.close()
+        qemu_cmd += [
+            "-drive",
+            "file=%s,media=disk,if=virtio,format=raw,id=yumcache,snapshot=off"
+            % args["yum_cache_path"],
+        ]
+    if args["yum_varlib_path"]:
+        if isinstance(args["yum_varlib_path"], list):
+            args["yum_varlib_path"] = args["yum_varlib_path"][0]
+        if not os.path.isfile(args["yum_varlib_path"]):
+            size = args["yum_cache_size"] * 1024**3
+            ff = open(args["yum_varlib_path"], "w")
+            ff.truncate(size)
+            ff.close()
+        qemu_cmd += [
+            "-drive",
+            "file=%s,media=disk,if=virtio,format=raw,id=yumvarlib,snapshot=off"
+            % args["yum_varlib_path"],
+        ]
+    qemu_cmd += AdditionalDrives.generate(
+        supported_devices, args["skip_missing_device"]
+    )
+
+    if diagnose or os.getenv("TEST_DISPLAY"):
+        qemu_cmd += ["-vnc", DEF_HOST + ":1,to=4095"]
+    if args["use_ovmf"]:
+        qemu_cmd += [
+            "-drive",
+            "file=/usr/share/OVMF/OVMF_CODE.fd,if=pflash,format=raw,unit=0,readonly=on",
+            "-drive",
+            "file=/usr/share/OVMF/OVMF_VARS.fd,if=pflash,format=raw,unit=1,snapshot=on,readonly=off",
+        ]
+        # q35 is needed for images build with tox-lsr build_ostree_image - not sure if it is related
+        # to ovmf
+        qemu_cmd += ["-machine", "q35"]
+    # Launch QEMU:
+    logger.info("Qemu CMD: {}".format(" ".join(qemu_cmd)))
+    qemu_proc = subprocess.Popen(
+        qemu_cmd, stdout=open(log_qemu, "a"), stderr=subprocess.STDOUT
+    )
+    if qemu_proc and diagnose:
+        logger.info(
+            "qemu-kvm is running with VNC server. PID: {}".format(
+                qemu_proc.pid
+            )
+        )
+        logger.info(
+            "netstat -ltpn4 | grep {0} # to find VNC server port".format(
+                qemu_proc.pid
+            )
+        )
+    return qemu_proc, port, log_guest, log_qemu
+
+
+def image_to_alias(image, hostalias, use_basename):
+    if not hostalias and not use_basename:
+        return image
+    if isinstance(hostalias, list) and len(hostalias) > 0:
+        hostalias = hostalias[0]
+    if hostalias == "BASENAME" or use_basename:
+        return os.path.basename(image)
+    return hostalias
+
+
+def inv_host(args):
+    if not args["host"].endswith(
+        (".qcow2", ".qcow2c", ".qcow2.snap", ".qcow2c.snap")
+    ):
+        logger.info("Return empty inventory for image: %s.", args["host"])
+        return EMPTY_INVENTORY
+    null = open(os.devnull, "w")
+    try:
+        tty = os.open("/dev/tty", os.O_WRONLY)
+        os.dup2(tty, 2)
+    except OSError:
+        tty = None
+    if isinstance(args["yum_cache_path"], list):
+        args["yum_cache_path"] = args["yum_cache_path"][0]
+    if isinstance(args["yum_varlib_path"], list):
+        args["yum_varlib_path"] = args["yum_varlib_path"][0]
+    # A directory for temporary stuff
+    directory = tempfile.mkdtemp(prefix="inventory-cloud")
+
+    def cleanup(directory):
+        logger.info("in inv_host cleanup")
+        if os.path.isdir(directory):
+            logger.info("removing directory %s", directory)
+            shutil.rmtree(directory)
+        AdditionalDrives.cleanup()
+
+    identity = os.path.join(directory, "identity")
+    with open(identity, "w") as f:
+        f.write(IDENTITY)
+    os.chmod(identity, 0o600)
+    metadata = os.path.join(directory, "meta-data")
+    with open(metadata, "w") as f:
+        f.write("")
+    userdata = os.path.join(directory, "user-data")
+    with open(userdata, "w") as f:
+        f.write(USER_DATA)
+        disable_ipv6 = True
+        if args["sshd_usedns_no"] or disable_ipv6:
+            f.write("bootcmd:\n")
+            if args["sshd_usedns_no"]:
+                f.write(BOOTCMD_SSHD_USEDNS_NO)
+            if disable_ipv6:
+                f.write(BOOTCMD_DISABLE_IPV6)
+        if args["yum_cache_path"] and args["yum_varlib_path"]:
+            f.write(
+                """
+device_aliases:
+  yumcache: /dev/vdb
+  yumvarlib: /dev/vdc
+disk_setup:
+  /dev/vdb:
+    layout: [100]
+    overwrite: false
+  /dev/vdc:
+    layout: [100]
+    overwrite: false
+fs_setup:
+- label: yumcache
+  filesystem: ext4
+  device: /dev/vdb1
+  overwrite: false
+- label: yumvarlib
+  filesystem: ext4
+  device: /dev/vdc1
+  overwrite: false
+mounts:
+- [/dev/vdb1, /var/cache/dnf]
+- [/dev/vdc1, /var/lib/dnf]
+runcmd:
+- |
+  set -euxo pipefail
+  if [ -f /etc/dnf/dnf.conf ]; then
+    yumfile=/etc/dnf/dnf.conf
+  else
+    yumfile=/etc/yum.conf
+  fi
+  if grep -q "keepcache[    ]*=[    ]*1" $yumfile; then
+    echo keepcache was already set
+  else
+    echo keepcache=1 >> $yumfile
+  fi
+  if [ ! -d /var/cache/yum ]; then
+    ln -s /var/cache/dnf /var/cache/yum
+  fi
+  if [ ! -d /var/lib/yum ]; then
+    ln -s /var/lib/dnf /var/lib/yum
+  fi
+"""
+            )
+    # Create our cloud init so we can log in
+    cloudinit = os.path.join(directory, "cloud-init.iso")
+    subprocess.check_call(
+        [
+            args["isomaker"],
+            "-input-charset",
+            "utf-8",
+            "-volid",
+            "cidata",
+            "-joliet",
+            "-rock",
+            "-quiet",
+            "-output",
+            cloudinit,
+            userdata,
+            metadata,
+        ],
+        stdout=null,
+    )
+    args["cloudinit"] = cloudinit
+    logger.info("Launching virtual machine for {0}".format(args["host"]))
+    # And launch the actual VM
+    proc = None  # for failure detection
+    log_guest = None
+    log_qemu = None
+    exc = None
+    try:
+        proc, port, log_guest, log_qemu = start_qemu(args)
+    except Exception as _exc:
+        exc = _exc
+    if proc is None or exc is not None:
+        cleanup(directory)
+        raise RuntimeError(
+            "Could not launch VM for qcow2 image"
+            " '{0}':{1}".format(args["host"], str(exc))
+        )
+    ssh_args = "-o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no"
+    if args["extra_ssh_args"]:
+        ssh_args += " " + args["extra_ssh_args"]
+    hostalias = image_to_alias(
+        args["host"], args["hostalias"], args["use_basename"]
+    )
+    # The variables
+    variables = {
+        "ansible_port": "{0}".format(port),
+        "ansible_host": DEF_HOST,
+        "ansible_user": DEF_USER,
+        "ansible_ssh_pass": DEF_PASSWD,
+        "ansible_ssh_private_key_file": identity,
+        "ansible_ssh_common_args": ssh_args,
+    }
+    # Write out a handy inventory file, for our use and for debugging
+    inventory = args["inventory"]
+    if not inventory:
+        inventory = os.path.join(directory, "inventory")
+    write_debug_inventory(inventory, {args["hostalias"]: variables})
+    ansible_env = copy.deepcopy(os.environ)
+    if not args.get("inherit_stdout_callback"):
+        if "ANSIBLE_STDOUT_CALLBACK" in ansible_env:
+            del ansible_env["ANSIBLE_STDOUT_CALLBACK"]
+    for _ in range(0, 600):
+        try:
+            # Wait for ssh to come up
+            ping = [
+                ansible_bin,
+                "--inventory",
+                inventory,
+                "localhost",
+                "--module-name",
+                "raw",
+                "--args",
+                "/bin/true",
+            ]
+
+            exitcode = proc.poll()
+            if exitcode:
+                exitcode = proc.wait()
+                cleanup(directory)
+                raise RuntimeError(
+                    "qemu failed to launch VM for qcow2 image: {0} code {1} pid {2}".format(
+                        args["host"], exitcode, proc.pid
+                    )
+                )
+            if exitcode == 0:
+                _ = proc.wait()
+                cleanup(directory)
+                raise RuntimeError(
+                    "qemu unexpectedly exited for qcow2 image: {0} pid {1}".format(
+                        args["host"], proc.pid
+                    )
+                )
+            subprocess.check_call(
+                ping, stdout=null, stderr=null, env=ansible_env
+            )
+            break
+        except subprocess.CalledProcessError:
+            time.sleep(1)
+    else:
+        # Kill the qemu process
+        proc.terminate()  # no-op if not running
+        exitcode = proc.wait()
+        output = "\nqemu exited with code {0} pid {1}".format(
+            exitcode, proc.pid
+        )
+        # Read the last lines of the log
+        try:
+            with open(log_guest) as f:
+                data = f.readlines()
+                output = (
+                    output
+                    + "\nLast lines of {0}:\n".format(
+                        os.path.basename(log_guest)
+                    )
+                    + "".join(data[-10:])
+                )
+            with open(log_qemu) as f:
+                data = f.readlines()
+                output = (
+                    output
+                    + "\nLast lines of {0}:\n".format(
+                        os.path.basename(log_qemu)
+                    )
+                    + "".join(data[-10:])
+                )
+        except OSError:
+            pass
+        cleanup(directory)
+        raise RuntimeError(
+            "Could not access VM launched from qcow2 image: {0}{1}".format(
+                args["host"], output
+            )
+        )
+    # Process of our parent
+    ppid = os.getppid()
+    child = os.fork()
+    if child:
+        return variables
+    # Daemonize and watch the processes
+    os.chdir("/")
+    os.setsid()
+    os.umask(0)
+    if tty is None:
+        tty = null.fileno()
+    # Duplicate standard input to standard output and standard error.
+    os.dup2(null.fileno(), 0)
+    os.dup2(tty, 1)
+    os.dup2(tty, 2)
+    # alternatively, lock on a file
+    lock_file = os.environ.get("LOCK_ON_FILE", None)
+    if lock_file:
+        with open(lock_file, "w") as lff:
+            lff.write(str(proc.pid))
+    ssh_cmd = (
+        "ssh -p {port} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i {identity} {user}@{host}"
+    ).format(port=port, identity=identity, user=DEF_USER, host=DEF_HOST)
+    logger.info(ssh_cmd)
+    logger.info("Password is: {}".format(DEF_PASSWD))
+    logger.info("Cloudinit init location: {}".format(directory))
+    logger.info("export ANSIBLE_INVENTORY={0}".format(inventory))
+    logger.info("pid: {0}".format(proc.pid))
+    logger.info(
+        "Wait until parent for provision-script (ansible-playbook) dies or qemu."
+    )
+    while True:
+        time.sleep(1)
+        if lock_file:
+            if not os.path.exists(lock_file):
+                logger.info("Lock file is gone pid %d.", proc.pid)
+                break
+        else:
+            # Now wait for the parent process to go away, then kill the VM
+            try:
+                os.kill(ppid, 0)
+                os.kill(proc.pid, 0)
+            except ProcessLookupError as ple:
+                if ple.errno == 3:
+                    logger.info(
+                        "Either parent process %d or VM process %d is gone.",
+                        ppid,
+                        proc.pid,
+                    )
+                else:
+                    logger.error(
+                        "Got unexpected error %s checking for pid %d ppid %d.",
+                        str(ple),
+                        proc.pid,
+                        ppid,
+                    )
+                break
+    if diagnose:
+
+        def _signal_handler(*args):
+            logger.info("Diagnose ending.")
+
+        signal.signal(signal.SIGTERM, _signal_handler)
+        logger.info(
+            "kill {0} # when finished to debug VM.".format(os.getpid())
+        )
+        signal.pause()
+    # Kill the qemu process
+    exitcode = 0
+    try:
+        os.kill(proc.pid, signal.SIGTERM)
+        # now wait for it to terminate
+        while True:
+            try:
+                os.kill(proc.pid, 0)
+                time.sleep(1)
+            except ProcessLookupError as ple:
+                if ple.errno == 3:
+                    break
+                else:
+                    raise ple
+        logger.info("killed qemu process pid %d", proc.pid)
+    except ProcessLookupError as ple:
+        if ple.errno == 3:
+            logger.info("qemu process is not running pid %d", proc.pid)
+        else:
+            raise ple
+    cleanup(directory)
+    sys.exit(exitcode)
+
+
+def help_hostalias():
+    return """By default, this script will add each subject to the inventory, which is
+    typically the full path and filename of the disk image to use.  If you
+    cannot use a full path in the inventory, you can use the --hostalias to
+    specify an alias to use for the image in the inventory.  The position of
+    each --hostalias you specify on the command line must correspond exactly to
+    the position of the subject you specify on the command line or in the
+    TEST_SUBJECTS env var.  For example, if you specify
+    TEST_SUBJECTS="/path/to/a.qcow2 /path/to/b.qcow2" ... --hostalias a --hostalias b
+    Then the inventory would use "a" as the alias for /path/to/a.qcow2, and
+    b as the alias for /path/to/b.qcow2.  If you want to use the basename of the file
+    as the hostalias, specify the special value 'BASENAME'.  For example, if you have
+    TEST_SUBJECTS="/path/to/a.qcow2 /path/to/b.qcow2" ... --hostalias BASENAME --hostalias b
+    Then the inventory will use "a.qcow2" as the alias for path /path/to/a.qcow2, and will
+    use "b" as the alias for path /path/to/b.qcow2.
+    If you want all of the subjects to use the basename of the file, use option
+    --use-basename, then you do not have to use --hostalias for every subject.
+    """
+
+
+def help_sshd_usedns_no():
+    return """On some EL7 systems, sshd uses 'UseDNS yes' by default.  This can
+    create a very bad performance problem with ssh and Ansible.  You can use
+    --sshd-usedns-no to configure the VM to use 'UseDNS no' instead."""
+
+
+def help_skip_missing_device():
+    return """If you are using the same provision.fmf on multiple systems, the
+    qemu on some systems may not support all of the specified devices.  For
+    example, qemu on many platforms does not support NVMe.  By default, the
+    script will issue an error if you attempt to use an unsupported device.
+    Use this flag to skip missing devices, with a warning."""
+
+
+def help_yumcache():
+    return """Using --yum-cache-path and --yum-varlib-path will tell the script
+    that you want it to create files on the hypervisor machine for the purpose
+    of keeping a yum/dnf cache for the VMs.  This helps the performance if multiple
+    VMs are run on the same hypervisor consecutively - the first run will populate
+    the cache with packages and metadata, and subsequent runs can install the packages
+    from the cache.  You must provide a unique --yum-cache-path and --yum-varlib-path
+    for each unique subject.  You cannot specify files used for a centos-7 VM to be
+    also used for a centos-8 VM - you must have a separate files for each platform.
+    For each file, the script will create the file if it does not exist,
+    will create the partition on it, create the file system, mount it into the
+    VM at /var/cache/dnf and /var/lib/dnf, and will create the symlink /var/cache/yum
+    and /var/lib/yum, and configure dnf/yum to use the cache (keepcache=1).
+    The user of this script is responsible for cleaning up the cache file
+    on the hypervisor when not needed."""
+
+
+def help_write_to_image():
+    return """Using --write-to-image will cause writes to be made to the
+    given image.  This is useful if you are creating a snapshot of a pre-setup
+    image to be used for subsequent runs.  By default, the script uses the -snapshot
+    argument, which means any changes are discarded.  NOTE: Do not use --write-to-image
+    unless you specify a subject which is a snapshot file, or it will overwrite your
+    base image."""
+
+
+def help_test_inventory():
+    return """Specify a file to write the generated inventory into, rather than
+    the default tmp file.  The file name must be either simply 'inventory', or it
+    must end in '.yml'.  Examples: '/path/to/inventory' or '/tmp/tmp.xxxxx.yml'.
+    The user is responsible for cleaning up this file when not needed."""
+
+
+def main():
+    global logger
+    global diagnose
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.DEBUG)
+    # stderr output
+    conhandler = logging.StreamHandler()
+    # Print to strerr by default messages with level >= warning, can be changed
+    # with setting TEST_DEBUG=1.
+    try:
+        diagnose = strtobool(os.getenv("TEST_DEBUG", "0"))
+    except ValueError:
+        diagnose = 0
+    conhandler.setLevel(logging.WARNING)
+    if diagnose:
+        # Collect all messages with any log level to stderr.
+        conhandler.setLevel(logging.NOTSET)
+    # Log format for stderr.
+    log_format = "[%(levelname)-5.5s] {}: %(message)s".format(
+        os.path.basename(__file__)
+    )
+    formatter = logging.Formatter(log_format)
+    conhandler.setFormatter(formatter)
+    logger.addHandler(conhandler)
+    parser = argparse.ArgumentParser(
+        description="Inventory for a QCow2 test image"
+    )
+    # list is currently unused
+    parser.add_argument("--list", action="store_true", help="Verbose output")
+    parser.add_argument(
+        "--extra-ssh-args",
+        default=os.environ.get("TEST_EXTRA_SSH_ARGS"),
+        help="Extra arguments to pass to SSH",
+    )
+    parser.add_argument("--host", help="Full path to qcow2 disk image")
+    parser.add_argument(
+        "--use-basename",
+        default=bool(strtobool(os.environ.get("TEST_USE_BASENAME", "False"))),
+        action="store_true",
+        help=help_hostalias(),
+    )
+    parser.add_argument(
+        "--hostalias",
+        default=shlex.split(os.environ.get("TEST_HOSTALIASES", "")),
+        action="append",
+        help=help_hostalias(),
+    )
+    parser.add_argument(
+        "--sshd-usedns-no",
+        default=bool(
+            strtobool(os.environ.get("TEST_SSHD_USEDNS_NO", "False"))
+        ),
+        action="store_true",
+        help=help_sshd_usedns_no(),
+    )
+    parser.add_argument(
+        "--skip-missing-device",
+        default=bool(
+            strtobool(os.environ.get("TEST_SKIP_MISSING_DEVICE", "False"))
+        ),
+        action="store_true",
+        help=help_skip_missing_device(),
+    )
+    parser.add_argument(
+        "--isomaker",
+        default=os.environ.get("TEST_ISOMAKER"),
+        help="Command to use to create ISO images - will look for /usr/bin/genisoimage and others by default",
+    )
+    parser.add_argument(
+        "--yum-cache-path",
+        default=shlex.split(os.environ.get("TEST_YUM_CACHE_PATHS", "")),
+        action="append",
+        help=help_yumcache(),
+    )
+    parser.add_argument(
+        "--yum-varlib-path",
+        default=shlex.split(os.environ.get("TEST_YUM_VARLIB_PATHS", "")),
+        action="append",
+        help=help_yumcache(),
+    )
+    parser.add_argument(
+        "--write-to-image",
+        default=bool(
+            strtobool(os.environ.get("TEST_WRITE_TO_IMAGE", "False"))
+        ),
+        action="store_true",
+        help=help_write_to_image(),
+    )
+    parser.add_argument(
+        "subjects",
+        nargs="*",
+        default=shlex.split(os.environ.get("TEST_SUBJECTS", "")),
+    )
+    parser.add_argument(
+        "--inventory",
+        default=os.environ.get("TEST_INVENTORY"),
+        help=help_test_inventory(),
+    )
+    parser.add_argument(
+        "--yum-cache-size",
+        type=int,
+        default=int(os.environ.get("TEST_YUM_CACHE_SIZE", "2")),
+        help="Size of yum cache in GB (default 2)",
+    )
+    parser.add_argument(
+        "--use-ovmf",
+        default=bool(strtobool(os.environ.get("TEST_USE_OVMF", "False"))),
+        action="store_true",
+        help="Use OVMF for VM",
+    )
+    parser.add_argument(
+        "--inherit-stdout-callback",
+        default=bool(
+            strtobool(os.environ.get("TEST_INHERIT_STDOUT_CALLBACK", "False"))
+        ),
+        action="store_true",
+        help="Inherit ANSIBLE_STDOUT_CALLBACK from caller",
+    )
+    opts = parser.parse_args()
+    # Send logs to common logfile for all default provisioners.
+    log_file = get_artifact_path(LOG_FILE)
+    fhandler = logging.FileHandler(log_file)
+    # Collect all messages with any log level to log file.
+    fhandler.setLevel(logging.NOTSET)
+    log_format = (
+        "%(asctime)s [{}/%(threadName)-12.12s] [%(levelname)-5.5s]:"
+        "%(message)s"
+    ).format(os.path.basename(__file__))
+    logFormatter = logging.Formatter(log_format)
+    fhandler.setFormatter(logFormatter)
+    logger.addHandler(fhandler)
+    logger.info("Start provisioner.")
+    if opts.use_basename and opts.hostalias:
+        logger.critical("Use only one of --use-basename or --hostalias")
+        sys.exit(1)
+    ansibles = ["ansible", "ansible-3", None]
+    global ansible_bin
+    ansible_bin = functools.reduce(which, ansibles)
+    if not ansible_bin:
+        raise Exception("Fail to find ansible.")
+    isomakers = [
+        "/usr/bin/genisoimage",
+        "/usr/bin/mkisofs",
+        "/usr/bin/xorriso",
+    ]
+    if not opts.isomaker:
+        opts.isomaker = functools.reduce(which, isomakers)
+    if not opts.isomaker:
+        raise Exception(
+            "Failed to find one of {0} for creating ISO images".format(
+                str(isomakers)
+            )
+        )
+    if opts.inventory:
+        basename = os.path.basename(opts.inventory)
+        if basename != "inventory" and os.path.splitext(basename)[1] != ".yml":
+            logger.critical(
+                "Inventory file %s must be named 'inventory' or must end in '.yml'",
+                opts.inventory,
+            )
+            sys.exit(1)
+    logger.info("Path to ansible: %s", ansible_bin)
+    if opts.host:
+        data = inv_host(dict(opts.__dict__))
+    else:
+        if opts.hostalias and len(opts.hostalias) != len(opts.subjects):
+            logger.critical(
+                "If you are using hostalias, you must specify a --hostalias for each subject."
+            )
+            sys.exit(1)
+        if opts.yum_cache_path and len(opts.yum_cache_path) != len(
+            opts.subjects
+        ):
+            logger.critical(
+                "If you are using yum_cache_path, you must specify a --yum-cache-path for each subject."
+            )
+            sys.exit(1)
+        if opts.yum_varlib_path and len(opts.yum_varlib_path) != len(
+            opts.subjects
+        ):
+            logger.critical(
+                "If you are using yum_varlib_path, you must specify a --yum-varlib-path for each subject."
+            )
+            sys.exit(1)
+        data = inv_list(opts)
+    # Dump Ansible inventory.
+    sys.stdout.write(json.dumps(data, indent=4, separators=(",", ": ")))
+
+
+if __name__ == "__main__":
+    ret = -1
+    try:
+        main()
+        ret = 0
+    except RuntimeError as ex:
+        print_bad_inventory()
+        logger.error("{0}".format(ex))
+    except Exception:
+        print_bad_inventory()
+        # Backtrace stack goes to log file. If TEST_DEBUG == 1, it goes to stderr too.
+        logger.error("Fatal error in provision script.", exc_info=True)
+    sys.exit(ret)

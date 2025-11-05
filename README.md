@@ -460,8 +460,7 @@ the tox-lsr repo.
   where the downloaded qcow2 images will be cached - be sure this partition has
   a lot of space if you plan on downloading multiple images.  The corresponding
   environment variable is `LSR_QEMU_CACHE`.
-* `--inventory` - default
-  `/usr/share/ansible/inventory/standard-inventory-qcow2` - this is useful to
+* `--inventory` - default is the one included with tox-lsr - this is useful to
   set if you are working on the inventory script and want to use your local
   clone.  The corresponding environment variable is `LSR_QEMU_INVENTORY`.
 * `--collection` - This tells the script that the given playbook should be run
@@ -817,7 +816,7 @@ Please note that the standard-inventory-qcow2 is supposed to be a python2
 version.
 ```
 python runqemu.py --config=NONE --cache=/path/to/cache_dir \
-  --inventory=/usr/share/ansible/inventory/standard-inventory-qcow2 \
+  --inventory=/path/to/my/standard-inventory-qcow2 \
   --image-file=/path/to/cache_dir/RHEL_6_10_GA.qcow2 \
   --setup-yml=/path/to/cache_dir/_setup.yml --ssh-el6 \
   --artifacts=/path/to/artifacts --wait-on-qemu --log-level info \

@@ -50,12 +50,8 @@ except NameError:
 # https://www.freedesktop.org/wiki/CommonExtendedAttributes/
 URL_XATTR = "user.xdg.origin.url"
 DATE_XATTR = "user.dublincore.date"
-DEFAULT_QEMU_INVENTORY = (
-    "/usr/share/ansible/inventory/standard-inventory-qcow2"
-)
-DEFAULT_QEMU_INVENTORY_URL = (
-    "https://pagure.io/fork/rmeggins/standard-test-roles/raw/"
-    "linux-system-roles/f/inventory/standard-inventory-qcow2"
+DEFAULT_QEMU_INVENTORY = os.path.join(
+    os.environ.get("LSR_SCRIPTDIR", "/"), "standard-inventory-qcow2"
 )
 DEFAULT_LSR_QEMU_REPORT_ERRORS_URL = (
     "https://raw.githubusercontent.com/linux-system-roles/"
@@ -1552,7 +1548,7 @@ def get_arg_parser():
         "--inventory",
         default=os.environ.get(
             "LSR_QEMU_INVENTORY",
-            DEFAULT_QEMU_INVENTORY_URL,
+            DEFAULT_QEMU_INVENTORY,
         ),
         help=(
             "Inventory to use for VMs - if file, use directly - "

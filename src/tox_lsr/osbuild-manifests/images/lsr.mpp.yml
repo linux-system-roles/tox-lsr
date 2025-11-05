@@ -4,7 +4,7 @@ mpp-vars:
   ssh_permit_root_login: true
   # mkpasswd -m sha512sum the_password
   root_password: $6$wj.kFDYpt.5Qi5R4$V0vLpJLmZu2G/gc5llsCTLM8C0KFb2ZUXiOyyFUVeZzpEA88d99iTayKbutE/zhxRAPRkubf.NvtsBdv/UxJm1
-  # https://pagure.io/fork/rmeggins/standard-test-roles/blob/master/f/inventory/standard-inventory-qcow2#_59
+  # the ssh key is from the standard-inventory-qcow2 file included with tox-lsr
   root_ssh_key: "AAAAB3NzaC1yc2EAAAADAQABAAABgQDF6DLa+l+ikW2PbJ8v++ooNjOYrzCDm1MRnz\
     cs283W6u/3BYq2fejQ3xvtyh8rhMbqWdL89XlWs8yjdVgIAAoK1zbqEOM8N8IB5wBR\
     o7dTIvtsc9/dIOEXSSBX5W2T6hGA/G6S1bsOrEFFnGiqWo16T99tsr8eR2ytgqFwaO\
