@@ -10,28 +10,35 @@ roles via `tox`. The default settings can be overridden by role developer in
 ## How to Get It
 
 For local development, if you have already installed `tox` and `pip`:
+
 ```
 pip install --user git+https://github.com/linux-system-roles/tox-lsr@main
 ```
+
 This will install `tox-lsr` in your `~/.local` directory where tox should find
 it.  If you want to use a release tagged version:
+
 ```
 pip install --user git+https://github.com/linux-system-roles/tox-lsr@0.0.4
 ```
+
 Look at https://github.com/linux-system-roles/tox-lsr/releases for the list of
 releases and tags.
 
 To confirm that you have it and that `tox` can use it:
+
 ```
 # tox --help | grep lsr-enable
 usage: tox [--lsr-enable] [--version] [-h] [--help-ini] [-v] [-q]
   --lsr-enable          Enable the use of the tox-lsr plugin (env: LSR_ENABLE)
 ```
+
 This shows that the `--lsr-enable` flag is available.
 
 ### Additional requirements
 
 - `shellcheck` test requires `shellcheck` package.
+
 On Fedora, you can install it with `dnf install shellcheck`, then you can test shell scripts with `tox -e shellcheck`.
 
 Several tests use `podman` - so `dnf install podman`
@@ -57,6 +64,7 @@ for some reason you need to support Ansible 2.7 or earlier, use tox-lsr 1.x.
 ## Example tox.ini
 
 The following is an example of a `tox.ini` from the kernel_settings role:
+
 ```ini
 [lsr_config]
 lsr_enable = true
@@ -74,6 +82,7 @@ setenv =
 The `[lsr_config]` section is the configuration for the `tox-lsr` plugin.  You
 must set `lsr_enable = true` in order to use the plugin.  You can confirm that
 the plugin is being used:
+
 ```
 # tox -l
 black
@@ -81,6 +90,7 @@ pylint
 flake8
 ...
 ```
+
 If the plugin is not enabled, you would only see testenv definitions in your
 `tox.ini` file.
 
@@ -96,6 +106,7 @@ so flags like `-l` will return the default environments, `-e` can use the
 default environments, `--showconfig` will show the full merged config, etc.
 However, the `--skip-missing-interpreters` argument is ignored.  If you want to
 explicitly set this, you must add it to your local tox.ini:
+
 ```
 [tox]
 skip_missing_interpreters = false
@@ -109,6 +120,7 @@ setting is set in the local `tox.ini`, it will be applied, replacing any default
 setting, if any.  However, there are a few settings which will be merged -
 `setenv`, `passenv`, `deps`, `allowlist_external`.  For `setenv`, you can
 override a default setting.  For example, if the default was:
+
 ```ini
 [testenv:pylint]
 setenv =
@@ -123,7 +135,9 @@ allowlist_externals =
     bash
 commands = pylint ...
 ```
+
 and you specified this in your local `tox.ini`:
+
 ```ini
 [testenv:pylint]
 setenv =
@@ -139,7 +153,9 @@ allowlist_externals =
     grep
 commands = mypylint
 ```
+
 The final result would be:
+
 ```ini
 [testenv:pylint]
 setenv =
@@ -160,6 +176,7 @@ allowlist_externals =
     grep
 commands = mypylint
 ```
+
 The local `tox.ini` settings were merged with the defaults, and in the case of
 `setenv`, the local `tox.ini` settings replaced the defaults where there was a
 conflict.  All of the other parameters you set in the local `tox.ini` will be
@@ -168,6 +185,7 @@ set, replacing any existing default parameters.
 You can also define your own tests and config sections - you do not have to use
 `custom`.  However, if you add your own tests, you must also add them to the
 `[tox]` section `envlist`.  For example:
+
 ```ini
 [tox]
 envlist = mytest
@@ -182,12 +200,14 @@ deps = mydeps
 deps = {[mytests_common]mydeps} mytestdep
 commands = mytest
 ```
+
 Then `tox -l` will show `mytest` in addition to the default tests.
 
 #### How to completely disable a test
 
 Define its testenv but use `true` for `commands`.  For example, to disable
 `flake8`:
+
 ```ini
 [testenv:flake8]
 commands = true
@@ -212,6 +232,7 @@ There are a few settings that can be set in the `[lsr_config]` section:
 
 Here is an example from the kernel_settings role that uses `commands_pre` to run
 a script before every test, and the script will only execute for certain tests:
+
 ```ini
 [lsr_config]
 lsr_enable = true
@@ -230,6 +251,7 @@ if [ "$KS_LSR_NEED_TUNED" = 1 ] ; then
   ks_lsr_install_tuned "$KS_LSR_PYVER" "$(ks_lsr_get_site_packages_dir)"
 fi
 ```
+
 So the script is only executed for `pylint`, `coveralls`, `flake8`, and any test
 beginning with `py` e.g. `py38`.
 
@@ -238,6 +260,7 @@ beginning with `py` e.g. `py38`.
 Each test has a corresponding `[lsr_TESTNAME]` section.  For example, there is a
 `[lsr_flake8]` section.  This is primarily used when you want to completely
 replace the default config file.  If the default looks like this:
+
 ```ini
 [lsr_flake8]
 configfile = {lsr_configdir}/flake8.ini
@@ -250,12 +273,15 @@ commands =
         {env:RUN_FLAKE8_EXTRA_ARGS:} {posargs} .
     {[lsr_config]commands_post}
 ```
+
 and you want to use your custom `flake8.conf` to completely override and replace
 the default config, use this in your local `tox.ini`:
+
 ```ini
 [lsr_flake8]
 configfile = {toxinidir}/flake8.conf
 ```
+
 Then doing `tox -e flake8` would use your flake8.conf.
 
 ### Using setenv and environment variables
@@ -358,10 +384,12 @@ configuration and are available for use by test scripts:
 * `TOXINIDIR` - the full path to the local `tox.ini`
 * `LSR_SCRIPTDIR` - the full path to where the `tox-lsr` scripts are installed.
   This is primarily useful for including `utils.sh` in your scripts:
+
 ```bash
 . "$LSR_SCRIPTDIR/utils.sh"
 lsr_some_shell_func ....
 ```
+
 * `LSR_CONFIGDIR` - the full path to where the `tox-lsr` config files are
   installed.
 * `LSR_TOX_ENV_NAME` - the name of the test environment e.g. `py38`, `flake8`,
@@ -375,15 +403,18 @@ lsr_some_shell_func ....
 
 It can be tricky to get the plugin and module docs to render correctly.  Use a
 workflow like this:
+
 ```
 > LSR_ANSIBLE_TEST_DEBUG=true LSR_ANSIBLE_TEST_TESTS=ansible-doc \
   tox -e collection,ansible-test
 ```
+
 This will convert your role to a collection, run `ansible-test` with only the
 `ansible-doc` test, and dump what the converted doc looks like, or dump errors
 if your doc could not be rendered correctly.
 
 To run `ansible-lint-collection` you must first convert to collection.
+
 ```
 > tox -e collection,ansible-lint-collection
 ```
@@ -391,11 +422,13 @@ To run `ansible-lint-collection` you must first convert to collection.
 ### Integration test setup
 
 Install the test dependencies:
+
 ```sh
 sudo dnf install -y tox qemu-system-x86-core buildah podman
 ```
 
 Download and install the [default image configuration](https://github.com/linux-system-roles/linux-system-roles.github.io/blob/main/download/linux-system-roles.json):
+
 ```sh
 curl -s -L -o ~/.config/linux-system-roles.json \
 https://raw.githubusercontent.com/linux-system-roles/linux-system-roles.github.io/main/download/linux-system-roles.json
@@ -406,6 +439,7 @@ to `~/.config/extra-images.json`.  This is the default file location used by the
 `extra_images_file` setting in `~/.config/linux-system-roles.json`.
 
 Finally make sure you installed tox-lsr as described above:
+
 ```sh
 pip install --user git+https://github.com/linux-system-roles/tox-lsr@main
 ```
@@ -423,9 +457,11 @@ These tests run in one of two modes, depending on which of the following
 arguments you provide.  Note that you must use `--` on the command line after
 the `-e qemu-ansible-core-2.N` so that `tox` will not attempt to interpret these
 as `tox` arguments:
+
 ```
 tox -e qemu-ansible-core-2.17 -- --image-name centos-10 ...
 ```
+
 You must provide one of `--image-file` or `--image-name`.
 
 The values for `--image-name` come from the config file passed to the `--config`
@@ -576,23 +612,29 @@ the tox-lsr repo.
 Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
 and playbooks, separate them with a `--` on the command line:
+
 ```
 tox -e qemu-ansible-core-2.17 -- --image-name centos-10 --become --become-user root -- tests/tests_default.yml
 ```
+
 This is because `runqemu` cannot tell the difference between an Ansible argument
 and a playbook.  If you do not have any ansible-playbook arguments, only
 playbooks, you can omit the `--`:
+
 ```
 tox -e qemu-ansible-core-2.17 -- --image-name centos-10 tests/tests_default.yml
 ```
+
 If using `--collection`, it is assumed you used `tox -e collection` first.  Then
 specify the path to the test playbook inside this collection:
+
 ```
 tox -e collection
 tox -e qemu -- --image-name centos-10 --collection .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
 ```
 
 The config file looks like this:
+
 ```json
 {
     "images": [
@@ -637,9 +679,11 @@ The config file looks like this:
 ```
 
 Example:
+
 ```
 tox -e qemu-ansible-core-2.17 -- --image-name centos-10 tests/tests_default.yml
 ```
+
 This will lookup `centos-10` in your `~/.config/linux-system-roles.json`, will
 check if it needs to download a new image to `~/.cache/linux-system-roles`, will
 create a setup playbook based on the `"setup"` section in the config, and will
@@ -649,7 +693,8 @@ with `tests/tests_default.yml`.
 The environment variables are useful for customizing in your local tox.ini.  For
 example, if I want to use a custom location for my config and cache, and I do not
 want to use the profile_tasks plugin, I can do this:
-```
+
+```ini
 [qemu_common]
 setenv =
     LSR_QEMU_CONFIG = /home/username/myconfig.json
@@ -665,19 +710,23 @@ to run in this mode.  The argument to `--batch-file` is a plain text file.  Each
 line is an invocation of `ansible-playbook`.  The contents of the line are the
 same as the command line arguments to `runqemu`.  You can use almost all of the
 same command-line parameters.  For example:
+
 ```
 --log-file /path/to/test1.log --artifacts /path/to/test1-artifacts --setup-yml /path/to/setup-snapshot.yml --tests-dir /path/to/tests -e some_ansible_var="some ansible value" --batch-id tests_test1.yml --cleanup-yml restore.yml --cleanup-yml cleanup.yml -- _setup.yml save.yml /path/to/tests/tests_test1.yml
 --log-file /path/to/test2.log --artifacts /path/to/test2-artifacts --setup-yml /path/to/setup-snapshot.yml --tests-dir /path/to/tests -e some_ansible_var="some ansible value" --batch-id tests_test2.yml --cleanup-yml restore.yml --cleanup-yml cleanup.yml -- _setup.yml save.yml /path/to/tests/tests_test2.yml
 ...
 ```
+
 if you pass this as `runqemu.py --batch-file this-file.txt` it will start a VM
 and create an inventory, then run
+
 ```
 ansible-playbook --inventory inventory -e some_ansible_var="some ansible value" -- _setup.yml save.yml /path/to/tests/tests_test1.yml --cleanup-yml restore.yml --cleanup-yml cleanup.yml >> /path/to/test1.log 2>&1
 # artifacts such as default_provisioner.log and the vm logs will go to /path/to/test1-artifacts
 ansible-playbook --inventory inventory -e some_ansible_var="some ansible value" -- _setup.yml save.yml /path/to/tests/tests_test2.yml --cleanup-yml restore.yml --cleanup-yml cleanup.yml >> /path/to/test2.log 2>&1
 # artifacts such as default_provisioner.log and the vm logs will go to /path/to/test2-artifacts
 ```
+
 then it will shutdown the VM.  If you want to leave the VM running for
 debugging, use `--debug` on the command line *and* in every entry in the batch file e.g.
 `--debug --log-file /path/to/testN.log ...`
@@ -719,10 +768,12 @@ you will need to add `--` to the end of the `runqemu` command line, because
 Also, it is recommended to put any Ansible arguments *after* any `runqemu`
 arguments.
 Example:
+
 ```
 runqemu.py --log-level info --batch-file batch.txt --batch-report report.txt \
   --skip-tags tests::nvme --
 ```
+
 Since `--skip-tags` is an Ansible argument, it should come last, and it must be
 followed by `--`.
 
@@ -736,11 +787,13 @@ the following in this order:
 * the timestamp when the run finished in sec.usec format
 * the batch-id, if any
 * the list of playbooks for that run
+
 ```
 0 1654718873.937814 1654718878.705445 tests_default.yml /path/to/tests/tests_default.yml
 0 1654718879.937814 1654718881.705445 tests_ssh.yml /path/to/tests/tests_ssh.yml
 2 1654718879.937814 1654718881.705445 bogus.yml /path/to/bogus.yml
 ```
+
 Line `N` in the report should correspond to line `N` in the batch file, and you
 can also use the batch-id for correlation.
 
@@ -752,6 +805,7 @@ following:
 * put the password in the file `tests/vault_pwd` e.g. `echo -n password > tests/vault_pwd`
 * `mkdir tests/vars`
 * encrypt the variables
+
 ```
 ansible-vault encrypt_string --vault-password-file tests/vault_pwd my_secret_value \
   --name my_secret_var_name >> tests/vars/vault-variables.yml
@@ -774,9 +828,11 @@ Do this to run bootc end-to-end tests which call
 unless your system has passwordless sudo.
 
 Then if you run
+
 ```
 tox -e qemu-... -- --image-name name tests/tests_that_uses_my_secret_value.yml
 ```
+
 the variable `my_secret_var_name` will be automatically decrypted.  It is a good
 idea to test roles that use passwords, keys, tokens, etc. with vault to ensure
 that encryption works according to our documentation.
@@ -790,10 +846,12 @@ except certain ones.  In that case, create the file
 to skip, one per line.  For example, if you want to run all tests except
 tests_a.yml and tests_b.yml with the encrypted passwords, create the file
 `tests/no-vault-variables.txt` like this:
+
 ```
 tests_a.yml
 tests_b.yml
 ```
+
 Then you can run `tox -e qemu-... -- tests/tests_a.yml` and the vault encrypted
 variables will not be defined.
 
@@ -806,14 +864,17 @@ please specify `qemu-ansible-core-2.12` as follows.  You will
 also need to add `--ssh-el6` if you are using a newer EL9 or
 Fedora control node, or some other system which uses "modern"
 crypto and needs to use old, deprecated crypto to talk to EL6.
+
 ```
 tox -e "$ansible_core" -- --image-name rhel-6 --ssh-el6 -- test_playbook.yml
 ```
+
 Alternatively, following is the command line to run `runqemu.py` directly.
 This command line allows you to use python2, which is useful if `ansible 2.9`
 is installed on the control host.
 Please note that the standard-inventory-qcow2 is supposed to be a python2
 version.
+
 ```
 python runqemu.py --config=NONE --cache=/path/to/cache_dir \
   --inventory=/path/to/my/standard-inventory-qcow2 \
@@ -822,6 +883,7 @@ python runqemu.py --config=NONE --cache=/path/to/cache_dir \
   --artifacts=/path/to/artifacts --wait-on-qemu --log-level info \
   -- /path/to/cache_dir/_setup.yml test_playbook.yml
 ```
+
 Older versions of `runqemu.py` would examine the `--image-name` or
 `--image-file` value to determine if the image is an EL6 image, but this is now
 deprecated. You must specify `--ssh-el6` if you need it.
@@ -903,9 +965,11 @@ These tests run in one of two modes, depending on which of the following
 arguments you provide.  Note that you must use `--` on the command line after
 the `-e container-ansible-2.9` or `-e container-ansible-core-2.x` so that `tox` will not attempt to
 interpret these as `tox` arguments:
+
 ```
 tox -e container-ansible-core-2.17 -- --image-name centos-10 ...
 ```
+
 You must provide `--image-name`.
 
 * `--image-name` - assuming you have a config file (`--config`) that maps the
@@ -934,26 +998,33 @@ You must provide `--image-name`.
 Each additional command line argument is passed through to ansible-playbook, so
 it must either be an argument or a playbook.  If you want to pass both arguments
 and playbooks, separate them with a `--` on the command line:
+
 ```
 tox -e container-ansible-core-2.17 -- --image-name centos-10 --become --become-user root -- tests/tests_default.yml
 ```
+
 This is because `tox` cannot tell the difference between an Ansible argument
 and a playbook.  If you do not have any ansible-playbook arguments, only
 playbooks, you can omit the `--`:
+
 ```
 tox -e container-ansible-core-2.17 -- --image-name centos-10 tests/tests_default.yml
 ```
+
 If you want to test a collection, you must use `tox -e collection` first.  Then
 specify the path to the test playbook inside this collection:
+
 ```
 tox -e collection
 tox -e container-ansible-core-2.17 -- --image-name centos-10 .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
 ```
 
 Example:
+
 ```
 tox -e container-ansible-core-2.17 -- --image-name centos-10 tests/tests_default.yml
 ```
+
 This will lookup `centos-10` in your `~/.config/linux-system-roles.json`, check
 if the local snapshot is more than `CONTAINER_AGE` hours old, if so will
 `podman pull` the `"container"` value, will create a local snapshot container of
@@ -964,7 +1035,8 @@ the local snapshot with `tests/tests_default.yml`.
 The environment variables are useful for customizing in your local tox.ini.  For
 example, if I want to use a custom location for my config, and I do not
 want to use the profile_tasks plugin, I can do this:
-```
+
+```ini
 [container_common]
 setenv =
     LSR_QEMU_CONFIG = /home/username/myconfig.json
@@ -978,6 +1050,7 @@ in the same container by the same `ansible-playbook` command e.g.
 `ansible-playbook -c podman test1.yml ... testN.yml`. If you use `--parallel M`
 with `M > 1` then `tox` will run each playbook separately in separate containers
 e.g.
+
 ```
 { podman run -d ...; ansible-playbook -c podman test1.yml; } &
 { podman run -d ...; ansible-playbook -c podman test2.yml; } &
@@ -985,6 +1058,7 @@ e.g.
 { podman run -d ...; ansible-playbook -c podman testN.yml; } &
 
 ```
+
 The number `M` controls how many `podman` containers are running at a time.
 There seems to be a limitation on the number of containers that can be run at
 the same time.  For example, if there are 10 test playbooks, and you use
