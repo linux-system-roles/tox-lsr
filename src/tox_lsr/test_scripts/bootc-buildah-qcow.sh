@@ -11,10 +11,7 @@ OCI_TAG="localhost/bootc-tmp:$BUILDAH_ID"
 
 # extract private SSH key from standard-inventory-qcow2, and generate pubkey from it
 # keep this in sync with ./runqemu.py
-INVENTORY_URL="https://pagure.io/fork/rmeggins/standard-test-roles/raw/linux-system-roles/f/inventory/standard-inventory-qcow2"
-INVENTORY="${TOX_WORK_DIR:-.tox}/standard-inventory-qcow2"
-[ -e "$INVENTORY" ] || curl --fail -o "$INVENTORY" "$INVENTORY_URL"
-
+INVENTORY="${LSR_SCRIPTDIR:-.}/standard-inventory-qcow2"
 PUBKEY=$(sed -n '/BEGIN.*PRIVATE KEY/,/END.*PRIVATE KEY/ { s/^.*"""//; p }' \
     "$INVENTORY" | ssh-keygen -y -f /dev/stdin)
 
