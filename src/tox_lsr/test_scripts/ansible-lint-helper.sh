@@ -23,11 +23,37 @@ pre() {
             sed "/galaxy_info:/a\  role_name: $role" -i "$mm"
         fi
     fi
+    # create symlinks for the roles to be FQCN - ansible-lint does not like
+    # import_role unless the role is installed in a standard location
+    if [ -d roles ]; then
+        pushd roles
+        for role in *; do
+            if [ -d "$role" ]; then
+                role_link="$LSR_ROLE2COLL_NAMESPACE.$LSR_ROLE2COLL_NAME.$role"
+                if [ -L "$role_link" ]; then
+                    continue  # already a symlink
+                fi
+                ln -s "$role" "$role_link"
+            fi
+        done
+        popd
+    fi
 }
 
 post() {
     if [ -f "$mm_bkup" ]; then
         mv "$mm_bkup" "$mm"
+    fi
+    # see above
+    if [ -d roles ]; then
+        pushd roles
+        for role in *; do
+            role_link="$LSR_ROLE2COLL_NAMESPACE.$LSR_ROLE2COLL_NAME.$role"
+            if [ -L "$role_link" ]; then
+                rm "$role_link"
+            fi
+        done
+        popd
     fi
 }
 
