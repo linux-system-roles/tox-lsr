@@ -18,10 +18,11 @@ import time
 import traceback
 
 try:
-    from urllib.request import urlopen
+    from urllib.request import Request, urlopen
 except ImportError:
     # Python 2
     from urllib import urlopen
+    from urllib2 import Request
 from contextlib import contextmanager
 
 import yaml
@@ -146,9 +147,12 @@ def image_source_last_modified_by_file_metadata(path):
 @contextmanager
 def urlopen_retry(url):
     """Retry opening url up to 5 times."""
+    request = Request(url)
+    request.add_header("User-Agent", "linux-system-roles/runqemu")
+    request.add_header("Accept", "*/*")
     for retry in range(1, 5):
         try:
-            yield urlopen(url)
+            yield urlopen(request)
             return
         except OSError as e:
             last_error = e
@@ -282,7 +286,7 @@ def fetch_image(url, cache, label):
     return path
 
 
-def composeurl2images(
+def composeurl2images(  # noqa: C901
     composeurl, desiredarch, desiredvariant=None, desiredsubvariant=None
 ):
     """Find the latest url for a compose link."""
@@ -296,12 +300,37 @@ def composeurl2images(
 
     candidates = set()
 
-    for variant, arches in compose.images.images.items():
-        for arch in arches:
-            if arch == desiredarch:
-                for image in arches[arch]:
-                    if image.type == "qcow2":
-                        candidates.add((image, variant, image.subvariant))
+    try:
+        for variant, arches in compose.images.images.items():
+            for arch in arches:
+                if arch == desiredarch:
+                    for image in arches[arch]:
+                        if image.type == "qcow2":
+                            candidates.add((image, variant, image.subvariant))
+    except Exception as e:
+        logging.critical(
+            "Error getting compose image list from %s",
+            composepath,
+            exc_info=e,
+        )
+        if "images.json can not be deserialized" in str(e):
+            logging.critical(
+                "The site %s"
+                " is probably using Anubis to guard against DDOS attacks"
+                " due to excessive AI bot traffic.\n"
+                "The productmd library cannot add the User-Agent"
+                " and Accept headers to avoid being blocked.\n"
+                "This means you cannot use 'compose' in the "
+                "linux-system-roles.json file.\n"
+                "Please use 'source' instead.  The latest version of the "
+                "config file from the download page should have the "
+                "'source' field populated.\n"
+                "https://raw.githubusercontent.com/linux-system-roles/"
+                "linux-system-roles.github.io/refs/heads/main/download/"
+                "linux-system-roles.json",
+                composepath,
+            )
+        sys.exit(1)
 
     # variant and subvariant are used only as a hint
     # to disambiguate if multiple images were found
@@ -583,12 +612,18 @@ def get_image_config(args):
                         extra_images = json.load(ff)
                         images.extend(extra_images["images"])
                 except IOError as ioe:
-                    logging.debug(
-                        "Could not read extra images file %s",
-                        extra_images_file,
-                        exc_info=ioe,
-                    )
-                    extra_images_not_found = True
+                    if re.search(
+                        r"No such file or directory: .*extra-images.json",
+                        str(ioe),
+                    ):
+                        extra_images_not_found = True
+                    else:
+                        logging.critical(
+                            "Could not read or load extra images file %s",
+                            extra_images_file,
+                            exc_info=ioe,
+                        )
+                        sys.exit(1)
 
     if args.image_name:
         image = get_image(images, args.image_name)
