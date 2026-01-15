@@ -34,7 +34,7 @@ galaxy_collection() {
     local coll_path sub_cmd
     coll_path="$1"; shift  # collection path to use for listing, or to install into
     sub_cmd="$1"; shift  # install, list, etc.
-    env "$coll_path_var"="$coll_path" ansible-galaxy collection "$sub_cmd" -p "$coll_path" "$@"
+    env -v "$coll_path_var"="$coll_path" ansible-galaxy collection "$sub_cmd" -p "$coll_path" "$@"
 }
 
 logit() {
@@ -95,6 +95,8 @@ install_requirements() {
 }
 
 setup_plugins() {
+    info Ansible env vars
+    env | grep ^ANSIBLE_ || :
     if [ "${LSR_CONTAINER_PRETTY:-true}" = true ] || [ "${LSR_CONTAINER_PROFILE:-true}" = true ]; then
         local callback_plugin_dir
         callback_plugin_dir="$TOX_WORK_DIR/callback_plugins"
@@ -114,6 +116,7 @@ setup_plugins() {
             need_profile_py=1
         fi
         if [ -n "${need_debug_py:-}" ] || [ -n "${need_profile_py:-}" ]; then
+            info installing callback plugins in "$callback_plugin_dir"
             galaxy_collection "$LSR_TOX_ENV_TMP_DIR" install -vv ansible.posix
             tmp_debug_py="$LSR_TOX_ENV_TMP_DIR/ansible_collections/ansible/posix/plugins/callback/debug.py"
             tmp_profile_py="$LSR_TOX_ENV_TMP_DIR/ansible_collections/ansible/posix/plugins/callback/profile_tasks.py"
@@ -124,6 +127,9 @@ setup_plugins() {
                 mv "$tmp_profile_py" "$profile_py"
             fi
             rm -rf "$LSR_TOX_ENV_TMP_DIR/ansible_collections"
+        else
+            info callback plugins already installed in "$callback_plugin_dir"
+            ls -alrtF "$callback_plugin_dir"
         fi
         if [ "${LSR_CONTAINER_PRETTY:-true}" = true ]; then
             export ANSIBLE_STDOUT_CALLBACK=debug
@@ -147,10 +153,14 @@ setup_plugins() {
         local connection_plugin_dir
         connection_plugin_dir="${ANSIBLE_CONNECTION_PLUGINS:-$TOX_WORK_DIR/connection_plugins}"
         if [ ! -f "$connection_plugin_dir/$con_plugin" ]; then
+            info installing connection plugins in "$connection_plugin_dir"
             galaxy_collection "$LSR_TOX_ENV_TMP_DIR" install -vv containers.podman
             mkdir -p "$connection_plugin_dir"
             mv "$LSR_TOX_ENV_TMP_DIR/$collection_plugin_path" "$connection_plugin_dir"
             rm -rf "$LSR_TOX_ENV_TMP_DIR/ansible_collections"
+        else
+            info connection plugins already installed in "$connection_plugin_dir"
+            ls -alrtF "$connection_plugin_dir"
         fi
         export ANSIBLE_CONNECTION_PLUGINS="$connection_plugin_dir"
     fi
