@@ -563,6 +563,10 @@ def start_qemu(args, portrange=(2222, 5555)):
         # Write to temporary files instead of disk image files
         snapshot = ["-snapshot"]
         cacheopt = ""
+    if args["disable_ipv6"]:
+        ipv6_off = ",ipv6=off"
+    else:
+        ipv6_off = ""
     qemu_cmd = (
         [
             qemu_path
@@ -586,9 +590,9 @@ def start_qemu(args, portrange=(2222, 5555)):
             args["cloudinit"],
             # Configure a host network backend
             "-netdev",
-            "user,id=n0,hostfwd=tcp:127.0.0.3:{0}-:22,ipv6=off".format(port),
+            "user,id=n0,hostfwd=tcp:127.0.0.3:{0}-:22{1}".format(port, ipv6_off),
             "-netdev",
-            "user,id=n1,net=10.0.3.0/24,dhcpstart=10.0.3.16,restrict=on,ipv6=off",
+            "user,id=n1,net=10.0.3.0/24,dhcpstart=10.0.3.16,restrict=on{0}".format(ipv6_off),
             # Configure/create an on-board (or machine default) NIC
             "-net",
             "nic,netdev=n0,model=%s" % param_net_nic_model,
@@ -716,12 +720,11 @@ def inv_host(args):
     userdata = os.path.join(directory, "user-data")
     with open(userdata, "w") as f:
         f.write(USER_DATA)
-        disable_ipv6 = True
-        if args["sshd_usedns_no"] or disable_ipv6:
+        if args["sshd_usedns_no"] or args["disable_ipv6"]:
             f.write("bootcmd:\n")
             if args["sshd_usedns_no"]:
                 f.write(BOOTCMD_SSHD_USEDNS_NO)
-            if disable_ipv6:
+            if args["disable_ipv6"]:
                 f.write(BOOTCMD_DISABLE_IPV6)
         if args["yum_cache_path"] and args["yum_varlib_path"]:
             f.write(
@@ -1176,6 +1179,14 @@ def main():
         ),
         action="store_true",
         help="Inherit ANSIBLE_STDOUT_CALLBACK from caller",
+    )
+    parser.add_argument(
+        "--disable-ipv6",
+        default=bool(
+            strtobool(os.environ.get("TEST_DISABLE_IPV6", "False"))
+        ),
+        action="store_true",
+        help="Disable IPv6",
     )
     opts = parser.parse_args()
     # Send logs to common logfile for all default provisioners.
