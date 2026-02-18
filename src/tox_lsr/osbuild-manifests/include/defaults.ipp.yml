@@ -156,6 +156,7 @@ mpp-vars:
   default_distro_dir: distro
   default_distro_gpg_keys: ""
   default_rootfs_verity: true
+  default_use_greenboot_rs: false
   distro_gpg_keys:
     mpp-eval: locals().get('distro_gpg_keys', default_distro_gpg_keys)
   timestamp:
@@ -332,6 +333,8 @@ mpp-vars:
     mpp-eval: locals().get('distro_dir',  default_distro_dir)
   rootfs_verity:
     mpp-eval: locals().get('rootfs_verity',  default_rootfs_verity)
+  use_greenboot_rs:
+    mpp-eval: locals().get('use_greenboot_rs', default_use_greenboot_rs)
   centos_gpg_key: |
     -----BEGIN PGP PUBLIC KEY BLOCK-----
     Version: GnuPG v2.0.22 (GNU/Linux)
