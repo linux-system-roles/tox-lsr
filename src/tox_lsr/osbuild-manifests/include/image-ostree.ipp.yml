@@ -13,12 +13,16 @@ mpp-vars:
     - mpp-eval: locals().get('extra_boot_rpms', [])
     - - nss-altfiles
       - greenboot
-      - mpp-if: not use_aboot
+      - mpp-if: not use_aboot and not use_greenboot_rs
         then: greenboot-grub2
-      - greenboot-reboot
-      - greenboot-status
-      - mpp-if: not use_aboot
+      - mpp-if: not use_greenboot_rs
+        then: greenboot-reboot
+      - mpp-if: not use_greenboot_rs
+        then: greenboot-status
+      - mpp-if: not use_aboot and not use_greenboot_rs
         then: greenboot-rpm-ostree-grub2
+      - mpp-if: use_greenboot_rs
+        then: greenboot-default-health-checks
       - mpp-if: name == 'developer'
         then: ostree-compliance-mode
       - polkit # Needed by rpm-ostree upgrade (until fix for https://github.com/coreos/rpm-ostree/issues/3554 is in)
@@ -70,15 +74,19 @@ pipelines:
       - type: org.osbuild.systemd
         options:
           enabled_services:
-          - mpp-if: not use_aboot
+          - mpp-if: not use_aboot and not use_greenboot_rs
             then: greenboot-grub2-set-counter.service
-          - mpp-if: not use_aboot
+          - mpp-if: not use_aboot and not use_greenboot_rs
             then: greenboot-grub2-set-success.service
           - greenboot-healthcheck.service
-          - mpp-if: not use_aboot
+          - mpp-if: not use_aboot and not use_greenboot_rs
             then: greenboot-rpm-ostree-grub2-check-fallback.service
-          - greenboot-status.service
-          - greenboot-task-runner.service
+          - mpp-if: not use_greenboot_rs
+            then: greenboot-status.service
+          - mpp-if: not use_greenboot_rs
+            then: greenboot-task-runner.service
+          - mpp-if: use_greenboot_rs
+            then: greenboot-set-rollback-trigger.service
     - mpp-eval: image_extra_stages
     - - type: org.osbuild.selinux
         options:
