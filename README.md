@@ -450,16 +450,16 @@ Integration tests are run using qemu/kvm using the test playbooks in the
 `tests/` directory, using the `standard-inventory-qcow2` script to create a VM
 and an Ansible inventory. There are several test envs that can be used to run
 these tests:
-* `qemu-ansible-2.9` - tests against ansible-2.9
-* `qemu-ansible-core-2.N` - tests against ansible-core 2.N
+* `qemu-ansible-2-9` - tests against ansible-2.9
+* `qemu-ansible-core-2-N` - tests against ansible-core 2.N
 
 These tests run in one of two modes, depending on which of the following
 arguments you provide.  Note that you must use `--` on the command line after
-the `-e qemu-ansible-core-2.N` so that `tox` will not attempt to interpret these
+the `-e qemu-ansible-core-2-N` so that `tox` will not attempt to interpret these
 as `tox` arguments:
 
 ```
-tox -e qemu-ansible-core-2.17 -- --image-name centos-10 ...
+tox -e qemu-ansible-core-2-17 -- --image-name centos-10 ...
 ```
 
 You must provide one of `--image-file` or `--image-name`.
@@ -467,7 +467,7 @@ You must provide one of `--image-file` or `--image-name`.
 The values for `--image-name` come from the config file passed to the `--config`
 argument below, or if not given, the default config installed above.
 
-NOTE: By default, `qemu-ansible-2.9` will run Ansible from an EL7 container
+NOTE: By default, `qemu-ansible-2-9` will run Ansible from an EL7 container
 using podman, because it is not possible to recreate the EL7 Ansible 2.9
 environment with modern Fedora and EL9+ tox venvs.  See below
 `--ansible-container`.  The container is built from `containers/Dockerfile` in
@@ -614,7 +614,7 @@ it must either be an argument or a playbook.  If you want to pass both arguments
 and playbooks, separate them with a `--` on the command line:
 
 ```
-tox -e qemu-ansible-core-2.17 -- --image-name centos-10 --become --become-user root -- tests/tests_default.yml
+tox -e qemu-ansible-core-2-20 -- --image-name centos-10 --become --become-user root -- tests/tests_default.yml
 ```
 
 This is because `runqemu` cannot tell the difference between an Ansible argument
@@ -622,7 +622,7 @@ and a playbook.  If you do not have any ansible-playbook arguments, only
 playbooks, you can omit the `--`:
 
 ```
-tox -e qemu-ansible-core-2.17 -- --image-name centos-10 tests/tests_default.yml
+tox -e qemu-ansible-core-2-20 -- --image-name centos-10 tests/tests_default.yml
 ```
 
 If using `--collection`, it is assumed you used `tox -e collection` first.  Then
@@ -630,7 +630,7 @@ specify the path to the test playbook inside this collection:
 
 ```
 tox -e collection
-tox -e qemu -- --image-name centos-10 --collection .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
+tox -e qemu-ansible-core-2-20 -- --image-name centos-10 --collection .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
 ```
 
 The config file looks like this:
@@ -681,7 +681,7 @@ The config file looks like this:
 Example:
 
 ```
-tox -e qemu-ansible-core-2.17 -- --image-name centos-10 tests/tests_default.yml
+tox -e qemu-ansible-core-2-20 -- --image-name centos-10 tests/tests_default.yml
 ```
 
 This will lookup `centos-10` in your `~/.config/linux-system-roles.json`, will
@@ -734,7 +734,7 @@ debugging, use `--debug` on the command line *and* in every entry in the batch f
 Use `--make-batch` to create a batch file using all of the files matching
 `tests/tests_*.yml`, and run the tests.  This will create the files `batch.txt`
 and `batch.report` in the current directory.
-`tox -e qemu-ansible-core-2.17 -- --image-name centos-10 --log-level debug --make-batch --`
+`tox -e qemu-ansible-core-2-20 -- --image-name centos-10 --log-level debug --make-batch --`
 You must specify the trailing `--` on the command line to tell runqemu that
 there are no more arguments.  You can then edit the `batch.txt` file to remove
 files, change arguments, etc. and re-run using `--batch-file batch.txt`.
@@ -860,7 +860,7 @@ variables will not be defined.
 The native version of Python on RHEL 6 is 2.6.
 The last ansible supporting Python2.6 is 2.12.
 So, to execute `runqemu` against RHEL/CentOS-6 managed host,
-please specify `qemu-ansible-core-2.12` as follows.  You will
+please specify `qemu-ansible-core-2-12` as follows.  You will
 also need to add `--ssh-el6` if you are using a newer EL9 or
 Fedora control node, or some other system which uses "modern"
 crypto and needs to use old, deprecated crypto to talk to EL6.
@@ -905,7 +905,7 @@ will be available as `~/.cache/linux-system-roles/$image_name-ostree.qcow2` You
 can test with the image like this:
 
 ```bash
-TEST_USE_OVMF=true tox -e qemu-ansible-core-2.17 -- \
+TEST_USE_OVMF=true tox -e qemu-ansible-core-2-20 -- \
   --image-file ~/.cache/linux-system-roles/centos-10-ostree.qcow2 \
   --log-level debug tests/tests_default.yml
 ```
@@ -957,17 +957,17 @@ enable the corresponding tests.
 `tox` will start one or more containers for the managed nodes using `podman`
 and the Ansible `podman` connection plugin.  There are some test envs that can
 be used to run these tests:
-* `container-ansible-2.9` - tests against Ansible 2.9 also uses jinja 2.7 if
-* supported by the python used `container-ansible-core-2.x` - tests against
+* `container-ansible-2-9` - tests against Ansible 2.9 also uses jinja 2.7 if
+* supported by the python used `container-ansible-core-2-x` - tests against
 * ansible-core 2.x
 
 These tests run in one of two modes, depending on which of the following
 arguments you provide.  Note that you must use `--` on the command line after
-the `-e container-ansible-2.9` or `-e container-ansible-core-2.x` so that `tox` will not attempt to
+the `-e container-ansible-2-9` or `-e container-ansible-core-2-x` so that `tox` will not attempt to
 interpret these as `tox` arguments:
 
 ```
-tox -e container-ansible-core-2.17 -- --image-name centos-10 ...
+tox -e container-ansible-core-2-20 -- --image-name centos-10 ...
 ```
 
 You must provide `--image-name`.
@@ -1000,7 +1000,7 @@ it must either be an argument or a playbook.  If you want to pass both arguments
 and playbooks, separate them with a `--` on the command line:
 
 ```
-tox -e container-ansible-core-2.17 -- --image-name centos-10 --become --become-user root -- tests/tests_default.yml
+tox -e container-ansible-core-2-20 -- --image-name centos-10 --become --become-user root -- tests/tests_default.yml
 ```
 
 This is because `tox` cannot tell the difference between an Ansible argument
@@ -1008,7 +1008,7 @@ and a playbook.  If you do not have any ansible-playbook arguments, only
 playbooks, you can omit the `--`:
 
 ```
-tox -e container-ansible-core-2.17 -- --image-name centos-10 tests/tests_default.yml
+tox -e container-ansible-core-2-20 -- --image-name centos-10 tests/tests_default.yml
 ```
 
 If you want to test a collection, you must use `tox -e collection` first.  Then
@@ -1016,13 +1016,13 @@ specify the path to the test playbook inside this collection:
 
 ```
 tox -e collection
-tox -e container-ansible-core-2.17 -- --image-name centos-10 .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
+tox -e container-ansible-core-2-20 -- --image-name centos-10 .tox/ansible_collections/fedora/linux-system-roles/tests/ROLE/tests_default.yml
 ```
 
 Example:
 
 ```
-tox -e container-ansible-core-2.17 -- --image-name centos-10 tests/tests_default.yml
+tox -e container-ansible-core-2-20 -- --image-name centos-10 tests/tests_default.yml
 ```
 
 This will lookup `centos-10` in your `~/.config/linux-system-roles.json`, check
@@ -1099,6 +1099,6 @@ actually has the desired effect in an image mode deployment. Run it through a
 QEMU environment, e.g.:
 
 ```
-tox -e qemu-ansible-core-2.16 -- --image-file tests/tmp/tests_default/qcow2/disk.qcow2 \
+tox -e qemu-ansible-core-2-20 -- --image-file tests/tmp/tests_default/qcow2/disk.qcow2 \
     -e __bootc_validation=true -- tests/tests_default.yml
 ```
