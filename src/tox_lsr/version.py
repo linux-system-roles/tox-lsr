@@ -3,4 +3,4 @@
 #
 """Holds tox-lsr plugin version."""
 
-__version__ = "3.15.0"
+__version__ = "3.16.0"
