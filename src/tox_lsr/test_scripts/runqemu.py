@@ -1478,6 +1478,8 @@ def runqemu(
     ansible_container=None,
     make_batch_file_order=None,
     lsr_report_errors_url=None,
+    skip_requirements=False,
+    skip_callback_plugins=False,
 ):
     """Download the image, set up, run playbooks."""
     if write_inventory:
@@ -1514,9 +1516,11 @@ def runqemu(
         test_env["TEST_YUM_CACHE_PATHS"] = yum_cache_path
         yum_varlib_path = os.path.join(cache, image["name"] + "_yum_varlib")
         test_env["TEST_YUM_VARLIB_PATHS"] = yum_varlib_path
-    install_requirements(sourcedir, collection_path, test_env, collection)
+    if not skip_requirements:
+        install_requirements(sourcedir, collection_path, test_env, collection)
     inventory = get_inventory_script(inventory)
-    setup_callback_plugins(pretty, profile, profile_task_limit, test_env)
+    if not skip_callback_plugins:
+        setup_callback_plugins(pretty, profile, profile_task_limit, test_env)
     get_lsr_report_errors_script(lsr_report_errors_url, test_env)
     if ansible_args is None:
         ansible_args = []
@@ -1840,6 +1844,24 @@ def get_arg_parser():
             "specify DEFAULT to use the default."
         ),
     )
+    parser.add_argument(
+        "--skip-requirements",
+        action="store_true",
+        default=bool(
+            strtobool(os.environ.get("LSR_QEMU_SKIP_REQUIREMENTS", "False"))
+        ),
+        help=("Skip installing the collection requirements."),
+    )
+    parser.add_argument(
+        "--skip-callback-plugins",
+        action="store_true",
+        default=bool(
+            strtobool(
+                os.environ.get("LSR_QEMU_SKIP_CALLBACK_PLUGINS", "False")
+            )
+        ),
+        help=("Skip installing the callback plugins."),
+    )
     return parser
 
 
@@ -1903,6 +1925,8 @@ def main():
         ansible_container=args.ansible_container,
         make_batch_file_order=args.make_batch_file_order,
         lsr_report_errors_url=args.lsr_report_errors_url,
+        skip_requirements=args.skip_requirements,
+        skip_callback_plugins=args.skip_callback_plugins,
     )
 
 
