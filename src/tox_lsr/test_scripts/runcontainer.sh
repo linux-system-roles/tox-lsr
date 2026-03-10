@@ -19,9 +19,12 @@ LOCAL_COLLECTION="${LOCAL_COLLECTION:-fedora/linux_system_roles}"
 BOOTC_MODE=
 
 is_ansible_env_var_supported() {
-    ansible-config list | grep -q "name: ${1}$"
+    # NOTE: grep -q causes ansible 2.20 ansible-config to error!
+    ansible-config list | grep "name: ${1}$" > /dev/null 2>&1
 }
 
+# ensure that we don't use system-wide collections by default
+export ANSIBLE_COLLECTIONS_SCAN_SYS_PATH=false
 if is_ansible_env_var_supported ANSIBLE_COLLECTIONS_PATH; then
     export ANSIBLE_COLLECTIONS_PATH="${ANSIBLE_COLLECTIONS_PATH:-$COLLECTION_BASE_PATH}"
     coll_path_var=ANSIBLE_COLLECTIONS_PATH
@@ -40,7 +43,7 @@ galaxy_collection() {
 logit() {
     local level
     level="$1"; shift
-    echo ::"$level" "$(date -Isec)" "$@"
+    echo "${level@U}" "$(date -Isec)" "$@"
 }
 
 info() {
@@ -62,6 +65,7 @@ error() {
 
 install_requirements() {
     local rq save_tar force upgrade coll_path
+    info Installing Collections in "$COLLECTION_BASE_PATH"
     # see what capabilities ansible-galaxy has
     if ansible-galaxy collection install --help 2>&1 | grep -q -- --force; then
         force=--force
@@ -361,8 +365,13 @@ run_buildah() {
     container_id=$(buildah from --name "$1" "$CONTAINER_BASE_IMAGE")
     CONTAINER_CLEANUP="buildah rm $container_id"
     # HACK: Until https://gitlab.com/fedora/bootc/base-images/-/merge_requests/167 lands
+    local -a pkgs=(python3-libdnf5 python3-rpm)
     if echo "$CONTAINER_BASE_IMAGE" | grep -q 'fedora-.*bootc'; then
-        buildah run "$container_id" -- dnf install -y python3-libdnf5 python3-rpm
+        if ! buildah run "$container_id" -- rpm -q "${pkgs[@]}" > /dev/null; then
+            buildah run "$container_id" -- dnf install -y "${pkgs[@]}"
+        else
+            info "${pkgs[*]} already installed in container"
+        fi
     fi
     # HACK: fix /root directory https://issues.redhat.com/browse/BIFROST-726
     buildah run "$container_id" -- mkdir -p /var/roothome
@@ -500,12 +509,16 @@ while [ -n "${1:-}" ]; do
         --extra-skip-tag)
             shift
             EXTRA_SKIP_TAGS="--skip-tags $1 $EXTRA_SKIP_TAGS" ;;
+        --skip-requirements)
+            SKIP_REQUIREMENTS=true ;;
+        --skip-callback-plugins)
+            SKIP_CALLBACK_PLUGINS=true ;;
         -v*)
             VERBOSITY="$1" ;;
-        --*) # unknown option
-            echo "Unknown option $1"
-            exit 1 ;;
-        *) # ansible arg or playbook
+        --) # end of options
+            shift
+            break ;;
+        *) # assume anything else is an ansible arg or playbook
             break ;;
     esac
     shift
@@ -529,15 +542,15 @@ if [ "${CONTAINER_BASE_IMAGE:-null}" = null ] ; then
 fi
 CONTAINER_IMAGE=${CONTAINER_IMAGE:-"lsr-test-$CONTAINER_IMAGE_NAME:latest"}
 
-echo ::group::install collection requirements
-install_requirements
-echo ::endgroup::
-echo ::group::install and configure plugins used by tests
-setup_plugins
-echo ::endgroup::
+if [ "${SKIP_REQUIREMENTS:-false}" = false ]; then
+    install_requirements
+fi
+if [ "${SKIP_CALLBACK_PLUGINS:-false}" = false ]; then
+    setup_plugins
+fi
 
 if [ -z "$BOOTC_MODE" ]; then
-    echo ::group::setup and prepare test container
+    info setup and prepare test container
     if [ -z "${CONTAINER_ENTRYPOINT:-}" ]; then
         case "$CONTAINER_IMAGE_NAME" in
         *-6) CONTAINER_ENTRYPOINT=/sbin/init ;;
@@ -548,7 +561,6 @@ if [ -z "$BOOTC_MODE" ]; then
     if ! refresh_test_container "$ERASE_OLD_SNAPSHOT"; then
         exit 1
     fi
-    echo ::endgroup::
 fi
 
 declare -A cur_jobs=()
