@@ -63,6 +63,12 @@ error() {
     logit error "$@"
 }
 
+debug() {
+    if [ "${LSR_DEBUG:-false}" = true ]; then
+        logit debug "$@"
+    fi
+}
+
 install_requirements() {
     local rq save_tar force upgrade coll_path
     info Installing Collections in "$COLLECTION_BASE_PATH"
@@ -98,9 +104,7 @@ install_requirements() {
     info "========================="
 }
 
-setup_plugins() {
-    info Ansible env vars
-    env | grep ^ANSIBLE_ || :
+setup_callback_plugins() {
     if [ "${LSR_CONTAINER_PRETTY:-true}" = true ] || [ "${LSR_CONTAINER_PROFILE:-true}" = true ]; then
         local callback_plugin_dir
         callback_plugin_dir="$TOX_WORK_DIR/callback_plugins"
@@ -133,7 +137,9 @@ setup_plugins() {
             rm -rf "$LSR_TOX_ENV_TMP_DIR/ansible_collections"
         else
             info callback plugins already installed in "$callback_plugin_dir"
-            ls -alrtF "$callback_plugin_dir"
+            if [ "${LSR_DEBUG:-false}" = true ]; then
+                ls -alrtF "$callback_plugin_dir"
+            fi
         fi
         if [ "${LSR_CONTAINER_PRETTY:-true}" = true ]; then
             export ANSIBLE_STDOUT_CALLBACK=debug
@@ -144,30 +150,62 @@ setup_plugins() {
         fi
         export ANSIBLE_CALLBACK_PLUGINS="$callback_plugin_dir"
     fi
-    local con_plugin
+}
+
+setup_connection_plugin() {
+    local con_plugin con_plugin_path con_plugin_found connection_plugin_dir
     if [ -n "$BOOTC_MODE" ]; then
         con_plugin="buildah.py"
     else
         con_plugin="podman.py"
     fi
-    local collection_plugin_path="ansible_collections/containers/podman/plugins/connection/$con_plugin"
-    # the role may already depend on containers.podman
-    if [ ! -f "$TOX_WORK_DIR/$collection_plugin_path" ] &&
-        [ -z "${ANSIBLE_CONNECTION_PLUGINS:-}" ] || [ ! -f "${ANSIBLE_CONNECTION_PLUGINS:-}/$con_plugin" ]; then
-        local connection_plugin_dir
-        connection_plugin_dir="${ANSIBLE_CONNECTION_PLUGINS:-$TOX_WORK_DIR/connection_plugins}"
-        if [ ! -f "$connection_plugin_dir/$con_plugin" ]; then
-            info installing connection plugins in "$connection_plugin_dir"
-            galaxy_collection "$LSR_TOX_ENV_TMP_DIR" install -vv containers.podman
-            mkdir -p "$connection_plugin_dir"
-            mv "$LSR_TOX_ENV_TMP_DIR/$collection_plugin_path" "$connection_plugin_dir"
-            rm -rf "$LSR_TOX_ENV_TMP_DIR/ansible_collections"
-        else
-            info connection plugins already installed in "$connection_plugin_dir"
-            ls -alrtF "$connection_plugin_dir"
+    connection_plugin_dir="$TOX_WORK_DIR/connection_plugins"
+    con_plugin_found=false
+    local -a con_plugin_paths new_con_plugin_paths
+    IFS=: read -ra con_plugin_paths <<< "${ANSIBLE_CONNECTION_PLUGINS:-}"
+    # see if the connection plugin is already in the path, and see if the local path is already in the path
+    for con_plugin_path in "${con_plugin_paths[@]}"; do
+        if [ -f "$con_plugin_path/$con_plugin" ]; then
+            con_plugin_found=true
         fi
-        export ANSIBLE_CONNECTION_PLUGINS="$connection_plugin_dir"
+        if [ "$con_plugin_path" = "$connection_plugin_dir" ]; then
+            debug local path already in ANSIBLE_CONNECTION_PLUGINS
+        else
+            new_con_plugin_paths+=("$con_plugin_path")
+        fi
+    done
+    if [ "$con_plugin_found" = false ]; then
+        # wasn't found in ANSIBLE_CONNECTION_PLUGINS but might be in the local path
+        # ensure the local path is first in ANSIBLE_CONNECTION_PLUGINS
+        new_con_plugin_paths=("$connection_plugin_dir" "${new_con_plugin_paths[@]}")
+        con_plugin_path="${new_con_plugin_paths[0]}"
+        if [ ! -d "$con_plugin_path" ]; then
+            mkdir -p "$con_plugin_path"
+        fi
+        if [ -f "$con_plugin_path/$con_plugin" ]; then
+            info connection plugin already installed in "$con_plugin_path/$con_plugin"
+        else
+            # either install the connection plugin collection here or copy it from the existing collection
+            local collection_plugin_file="ansible_collections/containers/podman/plugins/connection/$con_plugin"
+            if [ ! -f "$TOX_WORK_DIR/$collection_plugin_file" ]; then
+                info installing connection plugins in "$con_plugin_path"
+                galaxy_collection "$LSR_TOX_ENV_TMP_DIR" install -vv containers.podman
+                mv "$LSR_TOX_ENV_TMP_DIR/$collection_plugin_file" "$con_plugin_path"
+                rm -rf "$LSR_TOX_ENV_TMP_DIR/ansible_collections"
+            else
+                info connection plugins collection already installed in "$TOX_WORK_DIR/$collection_plugin_file"
+                # copy the connection plugin to the local path
+                cp "$TOX_WORK_DIR/$collection_plugin_file" "$con_plugin_path/$con_plugin"
+            fi
+        fi
+    else
+        info connection plugin found in ANSIBLE_CONNECTION_PLUGINS
+        # use original paths
+        new_con_plugin_paths=("${con_plugin_paths[@]}")
     fi
+    # convert array to colon-separated string
+    ANSIBLE_CONNECTION_PLUGINS="$(export IFS=:; echo "${new_con_plugin_paths[*]}")"
+    export ANSIBLE_CONNECTION_PLUGINS
 }
 
 refresh_test_container() {
@@ -511,8 +549,6 @@ while [ -n "${1:-}" ]; do
             EXTRA_SKIP_TAGS="--skip-tags $1 $EXTRA_SKIP_TAGS" ;;
         --skip-requirements)
             SKIP_REQUIREMENTS=true ;;
-        --skip-callback-plugins)
-            SKIP_CALLBACK_PLUGINS=true ;;
         -v*)
             VERBOSITY="$1" ;;
         --) # end of options
@@ -545,9 +581,8 @@ CONTAINER_IMAGE=${CONTAINER_IMAGE:-"lsr-test-$CONTAINER_IMAGE_NAME:latest"}
 if [ "${SKIP_REQUIREMENTS:-false}" = false ]; then
     install_requirements
 fi
-if [ "${SKIP_CALLBACK_PLUGINS:-false}" = false ]; then
-    setup_plugins
-fi
+setup_callback_plugins
+setup_connection_plugin
 
 if [ -z "$BOOTC_MODE" ]; then
     info setup and prepare test container
