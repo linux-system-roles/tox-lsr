@@ -32,6 +32,7 @@ else
     export ANSIBLE_COLLECTIONS_PATHS="${ANSIBLE_COLLECTIONS_PATHS:-$COLLECTION_BASE_PATH}"
     coll_path_var=ANSIBLE_COLLECTIONS_PATHS
 fi
+export ANSIBLE_INJECT_FACT_VARS="${ANSIBLE_INJECT_FACT_VARS:-false}"
 
 galaxy_collection() {
     local coll_path sub_cmd
