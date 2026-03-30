@@ -43,6 +43,11 @@ python "$LSR_TOX_ENV_DIR/tmp/lsr_role2collection.py" --src-path "$TOPDIR/.." --d
 coll_path="$TOX_WORK_DIR/ansible_collections/$LSR_ROLE2COLL_NAMESPACE/$LSR_ROLE2COLL_NAME"
 cp "$LSR_TOX_ENV_DIR/tmp/galaxy.yml" "$coll_path"
 
+# Use this version in meta/runtime.yml if set
+if [ -n "${LSR_COLLECTION_VERSION:-}" ]; then
+  sed -e "s/^requires_ansible:.*/requires_ansible: \"\>=${LSR_COLLECTION_VERSION}\"/" -i "$coll_path/meta/runtime.yml"
+fi
+
 # create the collection in this dir to share with other testenvs
 cd "$coll_path"
 

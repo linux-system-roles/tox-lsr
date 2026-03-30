@@ -55,6 +55,11 @@ cp -a "$src_ac_dir" "$dest_coll_dir"
 
 cd "$dest_coll_dir/ansible_collections/$LSR_ROLE2COLL_NAMESPACE/$LSR_ROLE2COLL_NAME"
 
+# Ensure the collection version is compatible with the ansible-test version
+if [ -n "${LSR_COLLECTION_VERSION:-}" ]; then
+  sed -e "s/^requires_ansible:.*/requires_ansible: \"\>=${LSR_COLLECTION_VERSION}\"/" -i meta/runtime.yml
+fi
+
 if [ "${LSR_ANSIBLE_TEST_DOCKER:-false}" = true ]; then
   ansible-test sanity --docker "$@" 2>&1 | ansible_test_filter
   exit 0
