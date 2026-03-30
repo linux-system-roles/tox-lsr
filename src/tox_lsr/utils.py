@@ -36,7 +36,7 @@ except ImportError:
 
 
 if TYPE_CHECKING:
-    from tox.config import Config, Parser
+    from tox.config import Config, Parser  # noqa: F401
     from tox.config.source import IniSource
 
 TEST_SCRIPTS_SUBDIR = "test_scripts"

@@ -108,12 +108,12 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
-    from typing import List, Optional
+    from typing import List, Optional  # noqa: F401
 
-    from tox.config import CoreConfigSet, Parser
-    from tox.config.loader import Loader
+    from tox.config import CoreConfigSet, Parser  # noqa: F401
+    from tox.config.loader import Loader  # noqa: F401
     from tox.config.source import IniSource
-    from tox.session import State
+    from tox.session import State  # noqa: F401
 
 # pylint: disable=protected-access
 
