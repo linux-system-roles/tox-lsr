@@ -1511,6 +1511,8 @@ def runqemu(
     test_env = dict(image.get("env", {}))
     # failures in inventory will force ansible-playbook to fail
     test_env["ANSIBLE_INVENTORY_ANY_UNPARSED_IS_FAILED"] = "true"
+    # disable inject fact vars by default - will be overridden by env if set
+    test_env["ANSIBLE_INJECT_FACT_VARS"] = "false"
     if use_yum_cache:
         yum_cache_path = os.path.join(cache, image["name"] + "_yum_cache")
         test_env["TEST_YUM_CACHE_PATHS"] = yum_cache_path

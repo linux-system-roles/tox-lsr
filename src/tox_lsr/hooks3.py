@@ -11,7 +11,15 @@ from typing import TYPE_CHECKING, cast
 import py.iniconfig
 import py.path
 from tox import hookimpl
-from tox.config import Config, Parser, TestenvConfig, testenvprefix
+
+# Parser and TestenvConfig are needed for type checking but flake8
+# doesn't like them
+from tox.config import (  # noqa: F401
+    Config,
+    Parser,
+    TestenvConfig,
+    testenvprefix,
+)
 
 try:
     from tox.config import ParseIni  # tox 3.4.0+
