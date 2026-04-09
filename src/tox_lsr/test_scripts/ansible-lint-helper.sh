@@ -38,9 +38,25 @@ pre() {
         done
         popd
     fi
+    # install collection requirements - filter out $LSR_ROLE2COLL_NAMESPACE.$LSR_ROLE2COLL_NAME
+    reqs="$LSR_TOX_ENV_TMP_DIR/collection-requirements.yml"
+    rm -f "$reqs"
+    yq eval-all "
+    . as \$item ireduce ([]; . + (\$item.collections // []))
+    | map(select(.name != \"$LSR_ROLE2COLL_NAMESPACE.$LSR_ROLE2COLL_NAME\"))
+    | {\"collections\": .}
+    " \
+    <([[ -f "$TOXINIDIR/meta/collection-requirements.yml" ]] && cat "$TOXINIDIR/meta/collection-requirements.yml" || printf "collections: []\n") \
+    <([[ -f "$TOXINIDIR/tests/collection-requirements.yml" ]] && cat "$TOXINIDIR/tests/collection-requirements.yml" || printf "collections: []\n") \
+    > "$reqs"
+    if [ -f "$reqs" ]; then
+        echo "Installing collection requirements for ansible-lint from $reqs"
+        ansible-galaxy collection install -vv -p "$TOX_WORK_DIR" --force -r "$reqs"
+    fi
 }
 
 post() {
+    rm -rf .ansible
     if [ -f "$mm_bkup" ]; then
         mv "$mm_bkup" "$mm"
     fi
