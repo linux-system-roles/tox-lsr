@@ -126,7 +126,7 @@ setup_callback_plugins() {
         fi
         if [ -n "${need_debug_py:-}" ] || [ -n "${need_profile_py:-}" ]; then
             info installing callback plugins in "$callback_plugin_dir"
-            galaxy_collection "$LSR_TOX_ENV_TMP_DIR" install -vv ansible.posix
+            galaxy_collection "$LSR_TOX_ENV_TMP_DIR" install -vv "${LSR_ANSIBLE_POSIX_VERSION:-ansible.posix}"
             tmp_debug_py="$LSR_TOX_ENV_TMP_DIR/ansible_collections/ansible/posix/plugins/callback/debug.py"
             tmp_profile_py="$LSR_TOX_ENV_TMP_DIR/ansible_collections/ansible/posix/plugins/callback/profile_tasks.py"
             if [ -n "${need_debug_py:-}" ]; then

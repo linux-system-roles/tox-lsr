@@ -1399,7 +1399,7 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
                 os.environ["LSR_TOX_ENV_TMP_DIR"],
                 "-vv",
                 get_galaxy_force_flag(),
-                "ansible.posix",
+                os.environ.get("LSR_ANSIBLE_POSIX_VERSION", "ansible.posix"),
             ],
             stdout=sys.stdout,
             stderr=sys.stderr,
