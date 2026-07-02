@@ -888,6 +888,81 @@ Older versions of `runqemu.py` would examine the `--image-name` or
 `--image-file` value to determine if the image is an EL6 image, but this is now
 deprecated. You must specify `--ssh-el6` if you need it.
 
+### libvirt testing
+
+libvirt support allows you to create multiple virtual machines that are
+networked to each other in a virtual subnet.  It is very similar to qemu support
+otherwise.
+
+#### Requirements
+
+In addition to the packages needed for qemu/kvm support, you will need
+
+* libvirt-client
+* python3-libvirt
+* python3-defusedxml
+
+You will need to add your user to the groups `kvm` and `libvirt`
+
+Because I use as my image cache directory `~/.cache/linux-system-roles`, I had
+to change libvirtd to run as my user ID:
+
+* edit /etc/libvirt/qemu.conf - add or change `user = "your_user_id"`
+* `systemctl restart libvirtd`
+
+You can also use a cache directory that you can share with the `qemu` group -
+make all paths `rwx` for the `qemu` group if you don't want to run the daemon as
+your user.
+
+#### Usage
+
+For example:
+
+```bash
+tox -e libvirt-ansible-core-2-21 -- --image-name centos-10 --hostnames my_server \
+  --hostnames my_client -- tests/tests_multihost.yml
+```
+
+This will create two centos-10 VMs, one with hostname `my_server` and one with
+hostname `my_client`.  From `my_client` you can do `curl http://my_server`
+(assuming there is an HTTP server running on my_server).
+
+The `tests_multihost.yml` playbook can have plays for each host:
+
+```yaml
+- name: Set up server for test
+  hosts: my_server
+  tasks:
+    - name: Call server set up role
+      include_role:
+        name: fedora.linux_system_roles.server_role
+      vars:
+        server_role_config: ...
+
+- name: Set up client and run tests
+  hosts: my_client
+  tasks:
+    - name: Run client role for test
+      include_role:
+        name: linux-system-roles.client_role
+      vars:
+        client_role_config: ...
+
+    - name: Verify client
+      command: do something
+```
+
+The `--debug` flag will
+
+* print instructions about how to ssh to each machine
+* will create an Ansible inventory file in the working directory (by default
+  `~/.cache/linux-system-roles/libvirt-xxxx`)
+* will create a cleanup.sh script in the working directory - use this after you
+  are done debugging
+
+You can also use `tox -e libvirt-cleanup` (make sure `LSR_QCOW_IMAGE_DIR` is set
+appropriately if not using the default `~/.cache/linux-system-roles`)
+
 ### Building ostree images
 
 Requirements: You will need to install the following packages to build and run:

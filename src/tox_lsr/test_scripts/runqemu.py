@@ -85,9 +85,17 @@ def strtobool(val):
 
 def is_ansible_env_var_supported(env_var_name):
     """See if ansible supports the given config env var."""
-    result = subprocess.check_output(  # nosec
-        ["ansible-config", "list"], stderr=subprocess.STDOUT, encoding="utf-8"
-    )
+    try:
+        result = subprocess.check_output(  # nosec
+            ["ansible-config", "list"],
+            stderr=subprocess.STDOUT,
+            encoding="utf-8",
+        )
+    except subprocess.CalledProcessError:
+        logging.error(
+            "Failed to run ansible-config list: %s", traceback.format_exc()
+        )
+        return False
     # look for name: ENV_VAR_NAME in output
     match = re.search(r"name: {}\n".format(env_var_name), result)
     if match:
