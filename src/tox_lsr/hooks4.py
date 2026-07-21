@@ -108,7 +108,7 @@ from .utils import (
 )
 
 if TYPE_CHECKING:
-    from typing import List, Optional  # noqa: F401
+    from typing import Dict, List, Optional  # noqa: F401
 
     from tox.config import CoreConfigSet, Parser  # noqa: F401
     from tox.config.loader import Loader  # noqa: F401
@@ -156,11 +156,25 @@ def update_config_loaders(core_conf, state):
     parser, add the [tox] section loader if it is missing.
     """
 
+    src = cast("IniSource", state.conf._src)
+
     # No [tox] section in tox.ini -> skip this step
-    if not cast("IniSource", state.conf._src)._parser.has_section("tox"):
+    if not src._parser.has_section("tox"):
         return
 
-    loaders = state.conf._src._section_to_loaders["tox"]
+    # tox < 4.58 caches loaders on the source; 4.58+ builds them on demand
+    section_to_loaders = cast(
+        "Optional[Dict[str, List[Loader]]]",
+        getattr(src, "_section_to_loaders", None),
+    )
+    loaders = cast("List[Loader]", [])
+    if section_to_loaders is not None:
+        loaders = section_to_loaders["tox"]
+    else:
+        existing = src.get_loader(src.get_core_section(), {})
+        if existing is not None:
+            return  # [tox] section already present
+
     core_conf_loaders = core_conf.loaders
 
     # Check the integrity of loaders and core_conf_loaders
@@ -175,10 +189,10 @@ def update_config_loaders(core_conf, state):
     # Create a new loader for the [tox] section and add it to the loaders
     # lists. Without the existing loader tox ignores the [tox] section and
     # fallbacks to its defaults
-    core_section = cast("IniSource", state.conf._src).get_core_section()
+    core_section = src.get_core_section()
     tox_loader = IniLoader(
         section=core_section,
-        parser=cast("IniSource", state.conf._src)._parser,
+        parser=src._parser,
         overrides=state.conf._overrides.get(core_section.key, []),
         core_section=core_section,
         section_key=core_section.key,
