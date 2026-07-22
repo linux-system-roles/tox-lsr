@@ -70,6 +70,26 @@ debug() {
     fi
 }
 
+# Wait until a container's State.Status is running.
+# Usage: wait_for_container_running CONTAINER_ID [MAX_SECONDS]
+wait_for_container_running() {
+    local container_id limit status
+    container_id="$1"
+    limit="${2:-${CONTAINER_RUNNING_TIMEOUT:-60}}"
+    for _ in $(seq 1 "$limit"); do
+        status=$(podman inspect -f '{{.State.Status}}' "$container_id" 2>/dev/null || true)
+        if [ "$status" = running ]; then
+            return 0
+        fi
+        sleep 1
+    done
+    error container "$container_id" not running after "${limit}s" \
+        "(last status=${status:-unknown})"
+    podman logs "$container_id"
+    podman inspect "$container_id"
+    return 1
+}
+
 install_requirements() {
     local rq save_tar force upgrade coll_path
     info Installing Collections in "$COLLECTION_BASE_PATH"
@@ -246,20 +266,23 @@ yaml.safe_dump(val, open(sys.argv[2], "w"))
 ' "$setup_json" "$setup_yml"
 
     local pkgcmd prepkgs initpkgs image_name
+    local -a initflags=()
     case "$CONTAINER_IMAGE_NAME" in
     *-7) pkgcmd=yum ;
-            initpkgs="" ;
-            prepkgs="" ;;
+         initpkgs="" ;
+         prepkgs="" ;;
     *-8) pkgcmd=dnf ;
-            initpkgs="" ;
-            prepkgs="" ;;
+         initpkgs="" ;
+         prepkgs="" ;;
     *-9) pkgcmd=dnf ;
-            initpkgs=systemd ;
-            prepkgs="dnf-plugins-core" ;;
+         initpkgs=systemd ;
+         prepkgs="dnf-plugins-core" ;;
     fedora-40) pkgcmd=dnf ;
-                prepkgs="" ;;
+               prepkgs="" ;;
     fedora-*) pkgcmd=dnf ;
-                prepkgs="python3-libdnf5 python3-rpm" ;;
+              prepkgs="python3-libdnf5 python3-rpm" ;
+              initpkgs=systemd ;
+              initflags+=("--init") ;;
     *) pkgcmd=dnf; prepkgs="" ;;
     esac
     for rpm in ${EXTRA_RPMS:-}; do
@@ -269,59 +292,80 @@ yaml.safe_dump(val, open(sys.argv[2], "w"))
     if [ -n "${initpkgs:-}" ]; then
         # some images do not have the entrypoint, so that must be installed
         # first
+        # --stop-timeout 0 means rm -f will kill it immediately - this is ok for the
+        # init container which is just running sleep 3600.
+        info starting container to install init packages
         container_id=$(podman run -d "${CONTAINER_OPTS[@]}" ${LSR_CONTAINER_OPTS:-} \
-            "${CONTAINER_MOUNTS[@]}" "$image_name" sleep 3600)
+            --stop-timeout 0 "${CONTAINER_MOUNTS[@]}" "$image_name" sleep 3600)
         if [ -z "$container_id" ]; then
             error Failed to start container
             return 1
         fi
-        sleep 1  # ensure container is running
+        wait_for_container_running "$container_id"
+        info installing init packages in container
         if ! podman exec -i "$container_id" "$pkgcmd" install -y $initpkgs; then
             podman inspect "$container_id"
             podman rm -f "$container_id"
             return 1
         fi
+        info committing container to create new image
         if ! podman container commit "$container_id" "$CONTAINER_IMAGE"; then
             podman rm -f "$container_id"
             return 1
         fi
+        info removing container
         podman rm -f "$container_id"
         image_name="$CONTAINER_IMAGE"
     fi
-    container_id=$(podman run -d "${CONTAINER_OPTS[@]}" ${LSR_CONTAINER_OPTS:-} \
+    info starting container
+    container_id=$(podman run -d "${initflags[@]}" "${CONTAINER_OPTS[@]}" ${LSR_CONTAINER_OPTS:-} \
         "${CONTAINER_MOUNTS[@]}" "$image_name" "$CONTAINER_ENTRYPOINT")
     if [ -z "$container_id" ]; then
         error Failed to start container
         return 1
     fi
-    sleep 1  # ensure container is running
+    # This doesn't seem to work with the current github action ubuntu runner with ansible-core 2.21
+    # and podman 4 or 5.  The container does not start, and has this error:
+    # Explicit --user argument required to run as user manager.
+    # However, subsequent runs of the container work fine.  So, let's try to just return in
+    # this case.
+    if ! wait_for_container_running "$container_id"; then
+        warning Failed to start container - continuing anyway
+        return 0
+    fi
     inv_file="$WORKDIR/inventory-refresh"
     echo "sut ansible_host=$container_id ansible_connection=podman" > "$inv_file"
     # shellcheck disable=SC2064
     trap "podman rm -f $container_id" RETURN
     if [ -n "${prepkgs:-}" ]; then
+        info installing pre packages in container
         if ! podman exec -i "$container_id" "$pkgcmd" install -y $prepkgs; then
+            podman logs "$container_id"
             podman inspect "$container_id"
             return 1
         fi
     fi
     if [ -s "${setup_yml}" ]; then
+        info running setup playbook
         # shellcheck disable=SC2086
         if ! ansible-playbook "${VERBOSITY:--vv}" ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
             "$setup_yml"; then
             return 1
         fi
     fi
+    info upgrading packages in container
     if ! podman exec -i "$container_id" "$pkgcmd" upgrade -y; then
         podman inspect "$container_id"
         return 1
     fi
+    info installing common packages in container
     COMMON_PKGS="sudo procps-ng systemd-udev device-mapper openssh-server \
         openssh-clients iproute"
     if ! podman exec -i "$container_id" "$pkgcmd" install -y $COMMON_PKGS; then
         podman inspect "$container_id"
         return 1
     fi
+    info running setup snapshot playbook
     if [ -f "${CONTAINER_TESTS_PATH}/setup-snapshot.yml" ]; then
         # shellcheck disable=SC2086
         if ! ansible-playbook "${VERBOSITY:--vv}" ${CONTAINER_SKIP_TAGS:-} -i "$inv_file" \
@@ -329,6 +373,7 @@ yaml.safe_dump(val, open(sys.argv[2], "w"))
             return 1
         fi
     fi
+    info committing container to create new image
     if ! podman container commit "$container_id" "$CONTAINER_IMAGE"; then
         return 1
     fi
@@ -365,7 +410,7 @@ run_podman() {
         "$CONTAINER_ENTRYPOINT")
     CONTAINER_CLEANUP="podman rm -f $container_id"
 
-    sleep 1  # give the container a chance to start up
+    wait_for_container_running "$container_id"
     if ! podman exec -i "$container_id" /bin/bash -euxo pipefail -c '
         limit=60
         for ii in $(seq 1 $limit); do
