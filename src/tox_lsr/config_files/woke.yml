@@ -4,6 +4,7 @@ ignore_files:
   - .README.html
   - .sanity-ansible-ignore-*.txt
   - CHANGELOG.md
+  - contributing.md
   - pylintrc
   - vendor
   - tests/sanity
