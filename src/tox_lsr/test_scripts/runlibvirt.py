@@ -6,6 +6,8 @@ Launch libvirt-based integration tests.
 Similar to runqemu.py but uses the libvirt Python API to create virtual
 machines instead of the standard-inventory-qcow2 script.  Supports creating
 multiple VMs on a shared virtual network so they can reach each other.
+Memory and vCPUs can be set for each hostname.  A DNS domain can be
+passed in for VM FQDNs and the libvirt network.
 """
 
 import hashlib
@@ -121,6 +123,22 @@ def is_valid_hostname(hostname):
     return all(HOSTNAME_LABEL_RE.match(label) for label in labels)
 
 
+def normalize_dns_domain(domain):
+    """Return a DNS domain, or None when domain is omitted."""
+    if domain is None:
+        return None
+    raw = str(domain).strip()
+    if not raw:
+        return None
+    domain = raw.rstrip(".")
+    if not domain or not is_valid_hostname(domain):
+        raise ValueError(
+            "Invalid DNS domain {!r}. Expected a hostname like "
+            "example.test.".format(raw)
+        )
+    return domain
+
+
 def validate_hostnames(hostnames):
     """Ensure hostnames are unique and each is a valid hostname string."""
     if not hostnames:
@@ -150,6 +168,193 @@ def validate_hostnames(hostnames):
     if errors:
         raise ValueError(" ".join(errors))
     return hostnames
+
+
+def _require_positive_int(value, label, hostname=None):
+    """Return value as a positive integer."""
+    try:
+        if isinstance(value, bool):
+            raise TypeError("bool is not an integer resource")
+        number = int(value)
+    except (TypeError, ValueError):
+        if hostname:
+            raise ValueError(
+                "Invalid {} {!r} for hostname {}.".format(
+                    label, value, hostname
+                )
+            )
+        raise ValueError("Invalid {} value {!r}.".format(label, value))
+    if number < 1:
+        if hostname:
+            raise ValueError(
+                "{} for hostname {} must be a positive integer.".format(
+                    label, hostname
+                )
+            )
+        raise ValueError("{} must be a positive integer.".format(label))
+    return number
+
+
+def parse_hostname_spec(spec):
+    """
+    Parse hostname[:memory[:vcpus]].
+
+    An empty field keeps the default, so host::2 sets only vcpus.
+    Returns (hostname, memory or None, vcpus or None).
+    """
+    parts = [part.strip() for part in spec.split(":")]
+    if len(parts) > 3:
+        raise ValueError(
+            "Invalid hostname spec {!r}. Expected "
+            "hostname[:memory[:vcpus]].".format(spec)
+        )
+    hostname = parts[0]
+    memory = None
+    vcpus = None
+    if len(parts) > 1 and parts[1] != "":
+        memory = _require_positive_int(parts[1], "memory", hostname)
+    if len(parts) > 2 and parts[2] != "":
+        vcpus = _require_positive_int(parts[2], "vcpus", hostname)
+    return hostname, memory, vcpus
+
+
+def parse_resource_specs(specs, default, label):
+    """
+    Parse a default and per-hostname resource values.
+
+    Each item is a comma-separated list of a bare positive integer,
+    which replaces default, or HOST=VALUE assignments.  Returns
+    (default, {hostname: value}).
+    """
+    value = default
+    by_host = {}
+    for spec in specs or []:
+        for part in str(spec).split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if "=" in part:
+                host, raw = part.split("=", 1)
+                host = host.strip()
+                if not is_valid_hostname(host):
+                    raise ValueError(
+                        "Invalid hostname {!r} in {} value {!r}.".format(
+                            host, label, part
+                        )
+                    )
+                by_host[host] = _require_positive_int(raw.strip(), label, host)
+            else:
+                value = _require_positive_int(part, label, None)
+    return value, by_host
+
+
+def resolve_cli_resource(cli_values, env_name, fallback, label):
+    """
+    Resolve a resource from CLI values or an environment variable.
+
+    cli_values may be a list of spec strings, one spec string, or an
+    integer default.  When it is omitted, env_name is used instead.
+    """
+    if cli_values is None or cli_values == []:
+        env_raw = os.environ.get(env_name)
+        specs = [env_raw] if env_raw else None
+    elif isinstance(cli_values, (list, tuple)):
+        specs = cli_values
+    else:
+        specs = [cli_values]
+    return parse_resource_specs(specs, fallback, label)
+
+
+def check_resource_hostnames(hostnames, by_host, label):
+    """Raise ValueError if by_host names a hostname that is not in use."""
+    known = set(hostnames)
+    unknown = sorted(host for host in by_host if host not in known)
+    if unknown:
+        raise ValueError(
+            "{} specified for unknown hostname(s): {}. Names must be "
+            "listed in --hostnames or produced by --num-vms.".format(
+                label, ", ".join(unknown)
+            )
+        )
+
+
+def combine_host_resources(default, by_host):
+    """Return an int, or a mapping of hostname to int plus "*"."""
+    if not by_host:
+        return default
+    combined = {"*": default}
+    combined.update(by_host)
+    return combined
+
+
+def merge_host_resource_maps(embedded, overrides, overrides_win):
+    """
+    Combine per-hostname maps.
+
+    --hostnames values win over environment assignments.  Explicit
+    --memory and --vcpus assignments win over --hostnames.
+    """
+    if overrides_win:
+        merged = dict(embedded)
+        merged.update(overrides)
+        return merged
+    merged = dict(overrides)
+    merged.update(embedded)
+    return merged
+
+
+def split_host_resource(value, fallback, label, hostnames=None):
+    """
+    Return (default, {hostname: int}) from an int or mapping.
+
+    Mapping key "*" or None is the default for omitted hosts.  When
+    hostnames is given, every other key must be one of those names.
+    """
+    if value is None:
+        return fallback, {}
+    if isinstance(value, bool) or not isinstance(value, (int, dict)):
+        raise ValueError(
+            "{} must be an integer or a mapping of hostname to "
+            "integer.".format(label)
+        )
+    if isinstance(value, int):
+        return _require_positive_int(value, label, None), {}
+    default = fallback
+    by_host = {}
+    for key, raw in value.items():
+        if key in ("*", None):
+            default = _require_positive_int(raw, label, None)
+            continue
+        if not isinstance(key, str) or not is_valid_hostname(key):
+            raise ValueError(
+                "Invalid hostname {!r} in {} specification.".format(key, label)
+            )
+        if hostnames is not None and key not in hostnames:
+            raise ValueError(
+                "{} specified for unknown hostname {}.".format(label, key)
+            )
+        by_host[key] = _require_positive_int(raw, label, key)
+    return default, by_host
+
+
+def narrow_host_resource(value, hostname):
+    """Keep the default and one hostname from a resource mapping."""
+    if not isinstance(value, dict):
+        return value
+    narrowed = {}
+    if "*" in value:
+        narrowed["*"] = value["*"]
+    if None in value:
+        narrowed[None] = value[None]
+    if hostname in value:
+        narrowed[hostname] = value[hostname]
+    if hostname not in narrowed:
+        if "*" in narrowed:
+            return narrowed["*"]
+        if None in narrowed:
+            return narrowed[None]
+        return {}
+    return narrowed
 
 
 def get_provision_fmf(tests_dir=None):
@@ -243,8 +448,14 @@ class LibvirtProvisioner(object):
         session_id=None,
         tests_dir=None,
         skip_missing_device=False,
+        dns_domain=None,
     ):
-        """Initialize a LibvirtProvisioner."""
+        """
+        Initialize a LibvirtProvisioner.
+
+        memory_mib and vcpus may be integers or mappings of hostname
+        to integer.  "*" is the default for hosts that are omitted.
+        """
         if libvirt is None:
             raise RuntimeError(
                 "python3-libvirt is required but the libvirt module is"
@@ -252,12 +463,16 @@ class LibvirtProvisioner(object):
             )
         self.image_path = os.path.abspath(image_path)
         self.hostnames = list(hostnames)
+        self.memory_mib, self.memory_by_host = split_host_resource(
+            memory_mib, DEFAULT_MEMORY_MIB, "memory", self.hostnames
+        )
+        self.vcpus, self.vcpus_by_host = split_host_resource(
+            vcpus, DEFAULT_VCPUS, "vcpus", self.hostnames
+        )
         self.cache = cache
         self.artifacts = artifacts
         self.uri = uri
         self.network_name = network_name
-        self.memory_mib = memory_mib
-        self.vcpus = vcpus
         self.write_to_image = write_to_image
         self.extra_ssh_args = extra_ssh_args or ""
         self.sshd_usedns_no = sshd_usedns_no
@@ -276,13 +491,14 @@ class LibvirtProvisioner(object):
         self.isomaker = find_isomaker()
         self._started = False
         self.gateway = None
-        self.dns_domain = None
+        self.dns_domain = normalize_dns_domain(dns_domain)
+        self.dns_domain_explicit = self.dns_domain is not None
         self.subnet_prefix = None
         self.host_plans = {}
         self.use_static_network = False
         self.tests_dir = tests_dir
         self.skip_missing_device = skip_missing_device
-        self.effective_memory_mib = memory_mib
+        self.effective_memory_mib = self.memory_mib
         self.primary_nic_model = "virtio"
         self.extra_nic_models = []
         self._temp_disk_files = []
@@ -294,7 +510,7 @@ class LibvirtProvisioner(object):
         if fmf_memory is not None:
             self.effective_memory_mib = int(fmf_memory)
             logging.info(
-                "Using memory %s MiB from provision.fmf",
+                "Using default memory %s MiB from provision.fmf",
                 self.effective_memory_mib,
             )
         nic_model = fmf_get(["qemu", "net_nic", "model"], None, self.tests_dir)
@@ -380,7 +596,8 @@ class LibvirtProvisioner(object):
         subnet_octet = 120 + (int(self.session_id[:2], 16) % 100)
         self.subnet_prefix = "192.168.{}".format(subnet_octet)
         self.gateway = self.subnet_prefix + ".1"
-        self.dns_domain = "lsr-{}.test".format(self.session_id)
+        if not self.dns_domain:
+            self.dns_domain = "lsr-{}.test".format(self.session_id)
         self.host_plans = {}
         for idx, hostname in enumerate(self.hostnames):
             self.host_plans[hostname] = {
@@ -398,8 +615,20 @@ class LibvirtProvisioner(object):
             address = self.gateway.rsplit(".", 1)[0]
             self.subnet_prefix = address
         domain_elem = root.find("domain")
+        network_domain = None
         if domain_elem is not None and domain_elem.get("name"):
-            self.dns_domain = domain_elem.get("name")
+            network_domain = domain_elem.get("name")
+        if self.dns_domain_explicit:
+            if network_domain and network_domain != self.dns_domain:
+                logging.warning(
+                    "Using DNS domain %s instead of %s from libvirt "
+                    "network %s",
+                    self.dns_domain,
+                    network_domain,
+                    self.network_name,
+                )
+        elif network_domain:
+            self.dns_domain = network_domain
         elif not self.dns_domain:
             self.dns_domain = "lsr-{}.test".format(self.session_id)
         self.host_plans = {}
@@ -754,6 +983,22 @@ chpasswd:
             )
         return disk_path
 
+    def _memory_for_host(self, hostname):
+        """
+        Return memory in MiB for hostname.
+
+        A per-hostname value overrides provision.fmf and --memory.
+        """
+        if hostname in self.memory_by_host:
+            return self.memory_by_host[hostname]
+        return self.effective_memory_mib
+
+    def _vcpus_for_host(self, hostname):
+        """Return the vCPU count for hostname."""
+        if hostname in self.vcpus_by_host:
+            return self.vcpus_by_host[hostname]
+        return self.vcpus
+
     def _domain_xml(
         self,
         domain_name,
@@ -761,8 +1006,14 @@ chpasswd:
         cloudinit_iso,
         mac_address,
         extra_devices_xml="",
+        memory_mib=None,
+        vcpu_count=None,
     ):
         """Build libvirt domain XML."""
+        if memory_mib is None:
+            memory_mib = self.effective_memory_mib
+        if vcpu_count is None:
+            vcpu_count = self.vcpus
         return """
 <domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>
   <name>{name}</name>
@@ -805,8 +1056,8 @@ chpasswd:
 </domain>
 """.format(
             name=domain_name,
-            memory=self.effective_memory_mib,
-            vcpus=self.vcpus,
+            memory=memory_mib,
+            vcpus=vcpu_count,
             cache="none" if self.write_to_image else "unsafe",
             disk=disk_path,
             cloudinit=cloudinit_iso,
@@ -949,12 +1200,16 @@ rm -f "$TMP"
                 extra_controllers, extra_devices = (
                     self._build_extra_devices_xml(hostname, vm_dir)
                 )
+                memory_mib = self._memory_for_host(hostname)
+                vcpu_count = self._vcpus_for_host(hostname)
                 xml = self._domain_xml(
                     domain_name,
                     disk_path,
                     cloudinit_iso,
                     plan["mac"],
                     extra_controllers + extra_devices,
+                    memory_mib=memory_mib,
+                    vcpu_count=vcpu_count,
                 )
                 logging.debug("Domain XML:\n%s", xml)
                 dom = self.conn.createXML(xml, 0)
@@ -965,10 +1220,13 @@ rm -f "$TMP"
                         )
                     )
                 logging.info(
-                    "Started libvirt domain %s for hostname %s (mac %s)",
+                    "Started libvirt domain %s for hostname %s "
+                    "(mac %s, memory %s MiB, vcpus %s)",
                     domain_name,
                     hostname,
                     plan["mac"],
+                    memory_mib,
+                    vcpu_count,
                 )
                 ipaddr = None
                 expected_ip = plan.get("ip")
@@ -1237,13 +1495,33 @@ def print_debug_cleanup_instructions(provisioner, inventory_path=None):
 
 
 def resolve_hostnames(args):
-    """Build hostname list from command-line arguments."""
+    """
+    Build hostnames and resources embedded in --hostnames.
+
+    Returns (hostnames, {hostname: memory}, {hostname: vcpus}).
+    The maps include only hostnames with an explicit value.
+    """
+    memory_by_host = {}
+    vcpus_by_host = {}
     if args.hostnames:
         names = []
         for item in args.hostnames:
-            names.extend([name for name in item.split(",") if name])
+            for spec in item.split(","):
+                spec = spec.strip()
+                if not spec:
+                    continue
+                hostname, memory, vcpus = parse_hostname_spec(spec)
+                names.append(hostname)
+                if memory is not None:
+                    memory_by_host[hostname] = memory
+                if vcpus is not None:
+                    vcpus_by_host[hostname] = vcpus
         if names:
-            return validate_hostnames(names)
+            return (
+                validate_hostnames(names),
+                memory_by_host,
+                vcpus_by_host,
+            )
     if args.num_vms < 1:
         raise ValueError("--num-vms must be at least 1")
     prefix = args.hostname_prefix or "vm"
@@ -1252,7 +1530,44 @@ def resolve_hostnames(args):
         "{}{:0{width}d}".format(prefix, idx, width=width)
         for idx in range(1, args.num_vms + 1)
     ]
-    return validate_hostnames(names)
+    return validate_hostnames(names), memory_by_host, vcpus_by_host
+
+
+def resolve_run_config(args):
+    """
+    Return hostnames, memory, and vcpus for a libvirt run.
+
+    memory and vcpus are integers, or mappings when any hostname
+    overrides the default.  The default is stored under "*".
+    """
+    hostnames, memory_by_host, vcpus_by_host = resolve_hostnames(args)
+    memory_cli = getattr(args, "memory", None)
+    vcpus_cli = getattr(args, "vcpus", None)
+    memory_default, memory_flags = resolve_cli_resource(
+        memory_cli,
+        "LSR_LIBVIRT_MEMORY",
+        DEFAULT_MEMORY_MIB,
+        "memory",
+    )
+    vcpus_default, vcpus_flags = resolve_cli_resource(
+        vcpus_cli,
+        "LSR_LIBVIRT_VCPUS",
+        DEFAULT_VCPUS,
+        "vcpus",
+    )
+    memory_by_host = merge_host_resource_maps(
+        memory_by_host, memory_flags, memory_cli not in (None, [])
+    )
+    vcpus_by_host = merge_host_resource_maps(
+        vcpus_by_host, vcpus_flags, vcpus_cli not in (None, [])
+    )
+    check_resource_hostnames(hostnames, memory_by_host, "memory")
+    check_resource_hostnames(hostnames, vcpus_by_host, "vcpus")
+    return (
+        hostnames,
+        combine_host_resources(memory_default, memory_by_host),
+        combine_host_resources(vcpus_default, vcpus_by_host),
+    )
 
 
 def stop_libvirt(provisioner, lock_on_file=None):
@@ -1378,7 +1693,16 @@ def refresh_snapshot_libvirt(
         )
     snap_kwargs = dict(provisioner_kwargs)
     snap_kwargs["image_path"] = snapfile
-    snap_kwargs["hostnames"] = [snap_kwargs["hostnames"][0]]
+    first_hostname = snap_kwargs["hostnames"][0]
+    snap_kwargs["hostnames"] = [first_hostname]
+    snap_kwargs["memory_mib"] = narrow_host_resource(
+        snap_kwargs.get("memory_mib", DEFAULT_MEMORY_MIB),
+        first_hostname,
+    )
+    snap_kwargs["vcpus"] = narrow_host_resource(
+        snap_kwargs.get("vcpus", DEFAULT_VCPUS),
+        first_hostname,
+    )
     snap_kwargs["write_to_image"] = True
     snap_kwargs["debug"] = False
     provisioner = LibvirtProvisioner(**snap_kwargs)
@@ -1455,6 +1779,7 @@ def run_ansible_playbooks_libvirt(  # noqa: C901
     sshd_usedns_no,
     disable_ipv6,
     skip_missing_device=False,
+    dns_domain=None,
 ):
     """Run playbooks against libvirt-managed VMs."""
     test_env.update(dict(os.environ))
@@ -1514,6 +1839,7 @@ def run_ansible_playbooks_libvirt(  # noqa: C901
         "image_alias": image_alias,
         "tests_dir": tests_dir,
         "skip_missing_device": skip_missing_device,
+        "dns_domain": dns_domain,
     }
     provisioner = None
     debug_provisioner = None
@@ -1720,8 +2046,16 @@ def runlibvirt(
     sshd_usedns_no=False,
     disable_ipv6=False,
     skip_missing_device=False,
+    dns_domain=None,
 ):
-    """Download image, provision libvirt VMs, run playbooks."""
+    """
+    Download image, provision libvirt VMs, run playbooks.
+
+    memory_mib and vcpus may be integers or mappings of hostname to
+    integer.  "*" is the default for hosts that are omitted.
+    dns_domain is the DNS domain for VM FQDNs.  When omitted, a
+    session domain is generated.
+    """
     if write_inventory:
         basename = os.path.basename(write_inventory)
         if basename != "inventory" and os.path.splitext(basename)[1] != ".yml":
@@ -1798,6 +2132,7 @@ def runlibvirt(
         sshd_usedns_no,
         disable_ipv6,
         skip_missing_device,
+        dns_domain,
     )
 
 
@@ -1810,10 +2145,13 @@ def get_arg_parser():
         "--hostnames",
         action="append",
         default=[],
+        metavar="HOSTNAME[:MEMORY[:VCPUS]]",
         help=(
             "Hostname for each VM.  May be given multiple times or as a "
-            "comma-separated list.  Each VM gets its own libvirt domain and "
-            "inventory entry.  All VMs share a virtual network."
+            "comma-separated list.  Optional memory (MiB) and vCPUs use "
+            "hostname[:memory[:vcpus]]; an empty field keeps the default, "
+            "so host::2 sets only vCPUs.  Each VM gets its own libvirt "
+            "domain and inventory entry.  All VMs share a virtual network."
         ),
     )
     parser.add_argument(
@@ -1847,18 +2185,40 @@ def get_arg_parser():
         ),
     )
     parser.add_argument(
-        "--memory",
-        type=int,
-        default=int(
-            os.environ.get("LSR_LIBVIRT_MEMORY", str(DEFAULT_MEMORY_MIB))
+        "--dns-domain",
+        default=os.environ.get("LSR_LIBVIRT_DNS_DOMAIN"),
+        help=(
+            "DNS domain for VM FQDNs, cloud-init, and the libvirt "
+            "network (default: lsr-<session>.test).  An existing "
+            "--libvirt-network keeps its domain unless this is set.  "
+            "Environment: LSR_LIBVIRT_DNS_DOMAIN."
         ),
-        help="VM memory in MiB (default: {}).".format(DEFAULT_MEMORY_MIB),
+    )
+    parser.add_argument(
+        "--memory",
+        action="append",
+        default=None,
+        metavar="MIB",
+        help=(
+            "VM memory in MiB (default: {}).  A bare number applies to "
+            "every VM that does not set its own memory.  HOST=MIB sets "
+            "one hostname, may be repeated or comma-separated, and "
+            "overrides memory given in --hostnames.  provision.fmf "
+            "qemu.m overrides this default, not a per-hostname value.  "
+            "Environment: LSR_LIBVIRT_MEMORY."
+        ).format(DEFAULT_MEMORY_MIB),
     )
     parser.add_argument(
         "--vcpus",
-        type=int,
-        default=int(os.environ.get("LSR_LIBVIRT_VCPUS", str(DEFAULT_VCPUS))),
-        help="Number of vCPUs per VM (default: {}).".format(DEFAULT_VCPUS),
+        action="append",
+        default=None,
+        metavar="COUNT",
+        help=(
+            "vCPUs per VM (default: {}).  A bare number applies to every "
+            "VM that does not set its own count.  HOST=COUNT sets one "
+            "hostname, may be repeated or comma-separated, and overrides "
+            "vCPUs given in --hostnames.  Environment: LSR_LIBVIRT_VCPUS."
+        ).format(DEFAULT_VCPUS),
     )
     parser.add_argument(
         "--sshd-usedns-no",
@@ -1935,7 +2295,8 @@ def main():
 
     rq.prep_el6(args)
     try:
-        hostnames = resolve_hostnames(args)
+        hostnames, memory_mib, vcpus = resolve_run_config(args)
+        dns_domain = normalize_dns_domain(args.dns_domain)
     except ValueError as err:
         logging.critical(str(err))
         sys.exit(1)
@@ -1975,11 +2336,12 @@ def main():
         skip_callback_plugins=args.skip_callback_plugins,
         libvirt_uri=args.libvirt_uri,
         libvirt_network=args.libvirt_network,
-        memory_mib=args.memory,
-        vcpus=args.vcpus,
+        memory_mib=memory_mib,
+        vcpus=vcpus,
         sshd_usedns_no=args.sshd_usedns_no,
         disable_ipv6=args.disable_ipv6,
         skip_missing_device=args.skip_missing_device,
+        dns_domain=dns_domain,
     )
 
 

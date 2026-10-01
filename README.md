@@ -927,6 +927,54 @@ This will create two centos-10 VMs, one with hostname `my_server` and one with
 hostname `my_client`.  From `my_client` you can do `curl http://my_server`
 (assuming there is an HTTP server running on my_server).
 
+#### Memory and vCPUs per hostname
+
+Each VM defaults to 2048 MiB of memory and 2 vCPUs.  Append memory (MiB) and
+vCPUs to a hostname as `hostname[:memory[:vcpus]]`:
+
+```bash
+tox -e libvirt-ansible-core-2-21 -- --image-name centos-10 \
+  --hostnames my_server:4096:4 --hostnames my_client:2048:1 \
+  -- tests/tests_multihost.yml
+```
+
+`my_server:4096:4` is 4096 MiB and 4 vCPUs.  An empty field keeps that default,
+so `my_client::1` sets 1 vCPU and leaves memory at the default.  The same list
+can be comma-separated: `--hostnames my_server:4096:4,my_client::1`.
+
+`--memory` and `--vcpus` set the same values.  A bare number is the default for
+every VM that does not set its own.  `HOST=VALUE` sets one hostname.  Repeat
+the flag or use a comma-separated list.  These override a value embedded in
+`--hostnames`, and they work with the names `--num-vms` generates (`vm01`,
+`vm02`, ...):
+
+```bash
+--num-vms 2 --memory 2048 --memory vm01=4096 --vcpus vm02=4
+--memory 2048,my_server=4096 --vcpus my_server=4,my_client=1
+```
+
+`LSR_LIBVIRT_MEMORY` and `LSR_LIBVIRT_VCPUS` use that same syntax, for example
+`LSR_LIBVIRT_MEMORY=2048,my_server=4096`.  A value written on `--hostnames`
+wins over the environment variable.  Passing `--memory` or `--vcpus` replaces
+that environment variable.  When `provision.fmf` sets `qemu.m`, that value
+becomes the default memory.  Per-hostname memory still applies.
+
+#### DNS domain
+
+`--dns-domain` sets the DNS domain used for VM FQDNs (`my_server.example.test`),
+the cloud-init search domain, and the libvirt network created for the VMs.  A
+trailing dot is removed, so `example.test.` is stored as `example.test`.  The
+default domain is `lsr-<session>.test`.
+
+```bash
+tox -e libvirt-ansible-core-2-21 -- --image-name centos-10 \
+  --hostnames my_server --hostnames my_client \
+  --dns-domain example.test -- tests/tests_multihost.yml
+```
+
+`LSR_LIBVIRT_DNS_DOMAIN` sets the same value.  With `--libvirt-network`, the
+existing network's domain is used.  `--dns-domain` overrides that domain.
+
 The `tests_multihost.yml` playbook can have plays for each host:
 
 ```yaml
