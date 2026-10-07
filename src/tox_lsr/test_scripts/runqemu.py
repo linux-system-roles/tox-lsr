@@ -703,6 +703,33 @@ def download_image(image, cache):
             logging.critical(errstr)
             raise Exception(errstr)
         image["file"] = image_path
+        if image.get("disk_size"):
+            resize_image(image_path, image["disk_size"])
+
+
+def size_to_bytes(size):
+    """Convert a size like 10G, 512M, or 1073741824 to bytes."""
+    match = re.match(r"^\s*(\d+)\s*([KMGT]?)\s*$", str(size), re.IGNORECASE)
+    if not match:
+        raise ValueError("Invalid disk_size {}".format(size))
+    exponent = " KMGT".index(match.group(2).upper() or " ")
+    return int(match.group(1)) * 1024**exponent
+
+
+def resize_image(image_path, disk_size):
+    """Grow the cached image to disk_size; snapshots inherit its size."""
+    wanted = size_to_bytes(disk_size)
+    info = json.loads(
+        subprocess.check_output(  # nosec
+            ["qemu-img", "info", "--output=json", image_path]
+        )
+    )
+    if info["virtual-size"] >= wanted:
+        return
+    logging.info("Resize image %s to %s", image_path, disk_size)
+    subprocess.check_call(  # nosec
+        ["qemu-img", "resize", "-f", "qcow2", image_path, str(wanted)]
+    )
 
 
 def stop_qemu(test_env):
