@@ -690,6 +690,10 @@ create a setup playbook based on the `"setup"` section in the config, and will
 run `ansible-playbook` with `standard-inventory-qcow2` as the inventory script
 with `tests/tests_default.yml`.
 
+An image can set `"disk_size"` (e.g. `"10G"`) to grow a downloaded image whose
+disk is too small, such as openSUSE Leap 16.  The image is never shrunk.  This
+needs `qemu-img`.
+
 The environment variables are useful for customizing in your local tox.ini.  For
 example, if I want to use a custom location for my config and cache, and I do not
 want to use the profile_tasks plugin, I can do this:
