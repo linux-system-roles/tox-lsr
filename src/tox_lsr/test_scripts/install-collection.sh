@@ -31,4 +31,13 @@ if ! ansible_galaxy=$(type -p ansible-galaxy) || [ -z "${ansible_galaxy:-}" ]; t
   lsr_error "${ME}: ansible-galaxy not found"
 fi
 
-"$ansible_galaxy" collection install --force -p "$TOX_WORK_DIR" --offline --no-deps "$collection_file" "$@"
+cache_path="${LSR_COLLECTIONS_CACHE:-$HOME/.cache/linux-system-roles}"
+if ansible-config list | grep "name: ANSIBLE_COLLECTIONS_PATH$" > /dev/null 2>&1; then
+  coll_path_var=ANSIBLE_COLLECTIONS_PATH
+else
+  coll_path_var=ANSIBLE_COLLECTIONS_PATHS
+fi
+env -u ANSIBLE_COLLECTIONS_PATH -u ANSIBLE_COLLECTIONS_PATHS \
+  "$coll_path_var=$cache_path" ANSIBLE_COLLECTIONS_SCAN_SYS_PATH=false \
+  "$ansible_galaxy" collection install --force -p "$TOX_WORK_DIR" \
+  --offline --no-deps "$collection_file" "$@"

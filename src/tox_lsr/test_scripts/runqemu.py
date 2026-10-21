@@ -62,8 +62,9 @@ INVENTORY_FAIL_MSG = "ERROR: Inventory is empty, tests did not run"
 DEFAULT_PROFILE_TASK_LIMIT = 30  # report up to 30 tasks in profile
 DEFAULT_POST_SNAP_SLEEP_TIME = 1  # seconds
 
-COLLECTION_NAMESPACE = "fedora"
-COLLECTION_NAME = "linux_system_roles"
+CACHE_PATH = os.path.expanduser(
+    os.environ.get("LSR_COLLECTIONS_CACHE", "~/.cache/linux-system-roles")
+)
 
 
 def strtobool(val):
@@ -1224,7 +1225,15 @@ def run_ansible_playbooks(  # noqa: C901
     if image_alias:
         test_env["TEST_HOSTALIASES"] = image_alias
     if collection_path:
-        test_env[COLL_PATH_ENV_VAR] = collection_path
+        test_env[COLL_PATH_ENV_VAR] = os.pathsep.join(
+            [collection_path, CACHE_PATH]
+        )
+        other_path_var = (
+            "ANSIBLE_COLLECTIONS_PATHS"
+            if COLL_PATH_ENV_VAR == "ANSIBLE_COLLECTIONS_PATH"
+            else "ANSIBLE_COLLECTIONS_PATH"
+        )
+        test_env.pop(other_path_var, None)
     if write_inventory:
         test_env["TEST_INVENTORY"] = write_inventory
     for batch in batches:
@@ -1344,66 +1353,21 @@ def run_ansible_playbooks(  # noqa: C901
         raise Exception("One or more tests failed")
 
 
-def install_requirements(sourcedir, collection_path, test_env, collection):
+def install_requirements(sourcedir, collection_path, test_env):
     """Install reqs from {meta,tests}/collection-requirements.yml, if any."""
-    collection_save_file = None
-    if collection:
-        save_collection = os.path.join(
-            collection_path,
-            "ansible_collections",
-            COLLECTION_NAMESPACE,
-            COLLECTION_NAME,
-        )
-        if os.path.exists(save_collection):
-            # ansible-galaxy collection install will overwrite
-            # fedora/linux_system_roles
-            # so we have to save a copy and restore it later
-            collection_save_file = os.path.join(
-                collection_path, "collection.save.tar"
-            )
-            subprocess.check_call(  # nosec
-                [
-                    "tar",
-                    "cfP",
-                    collection_save_file,
-                    save_collection,
-                ]
-            )
     coll_rqf = os.path.join(sourcedir, "meta", "collection-requirements.yml")
     tests_rqf = os.path.join(sourcedir, "tests", "collection-requirements.yml")
-    galaxy_env = {}
-    galaxy_env.update(dict(os.environ))
-    galaxy_env[COLL_PATH_ENV_VAR] = collection_path
+    search_path = os.pathsep.join([collection_path, CACHE_PATH])
+    test_env[COLL_PATH_ENV_VAR] = search_path
+    cmd = [
+        sys.executable,
+        os.path.join(os.path.dirname(__file__), "collection-cache.py"),
+    ]
     for reqfile in [coll_rqf, tests_rqf]:
         if os.path.isfile(reqfile):
-            ag_cmd = [
-                "ansible-galaxy",
-                "collection",
-                "install",
-                get_galaxy_force_flag(),
-                "-p",
-                collection_path,
-                "-vv",
-                "-r",
-                reqfile,
-            ]
-            subprocess.check_call(  # nosec
-                ag_cmd,
-                stdout=sys.stdout,
-                stderr=sys.stderr,
-                env=galaxy_env,
-            )
-            test_env[COLL_PATH_ENV_VAR] = collection_path
-    if collection_save_file:
-        subprocess.check_call(  # nosec
-            [
-                "tar",
-                "xfP",
-                collection_save_file,
-                "--overwrite",
-            ]
-        )
-        os.unlink(collection_save_file)
+            cmd.extend(["--requirements", reqfile])
+    if len(cmd) > 2:
+        subprocess.check_call(cmd)  # nosec
 
 
 def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
@@ -1417,9 +1381,6 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
     if not pretty and not profile:
         return
     callback_plugin_dir = get_callback_plugin_dir(test_env)
-    galaxy_env = {}
-    galaxy_env.update(dict(os.environ))
-    galaxy_env[COLL_PATH_ENV_VAR] = os.environ["LSR_TOX_ENV_TMP_DIR"]
     debug_py = os.path.join(callback_plugin_dir, "debug.py")
     profile_py = os.path.join(callback_plugin_dir, "profile_tasks.py")
     if (pretty and not os.path.isfile(debug_py)) or (
@@ -1427,21 +1388,14 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
     ):
         subprocess.check_call(  # nosec
             [
-                "ansible-galaxy",
-                "collection",
-                "install",
-                "-p",
-                os.environ["LSR_TOX_ENV_TMP_DIR"],
-                "-vv",
-                get_galaxy_force_flag(),
+                sys.executable,
+                os.path.join(os.path.dirname(__file__), "collection-cache.py"),
+                "--collection",
                 os.environ.get("LSR_ANSIBLE_POSIX_VERSION", "ansible.posix"),
-            ],
-            stdout=sys.stdout,
-            stderr=sys.stderr,
-            env=galaxy_env,
+            ]
         )
         tmp_debug_py = os.path.join(
-            os.environ["LSR_TOX_ENV_TMP_DIR"],
+            CACHE_PATH,
             "ansible_collections",
             "ansible",
             "posix",
@@ -1450,7 +1404,7 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
             "debug.py",
         )
         tmp_profile_py = os.path.join(
-            os.environ["LSR_TOX_ENV_TMP_DIR"],
+            CACHE_PATH,
             "ansible_collections",
             "ansible",
             "posix",
@@ -1460,15 +1414,10 @@ def setup_callback_plugins(pretty, profile, profile_task_limit, test_env):
         )
         if pretty:
             if not os.path.isfile(debug_py):
-                os.rename(tmp_debug_py, debug_py)
+                shutil.copy2(tmp_debug_py, debug_py)
         if profile:
             if not os.path.isfile(profile_py):
-                os.rename(tmp_profile_py, profile_py)
-        shutil.rmtree(
-            os.path.join(
-                os.environ["LSR_TOX_ENV_TMP_DIR"], "ansible_collections"
-            )
-        )
+                shutil.copy2(tmp_profile_py, profile_py)
     if pretty:
         test_env["ANSIBLE_STDOUT_CALLBACK"] = "debug"
     if profile:
@@ -1554,7 +1503,7 @@ def runqemu(
         yum_varlib_path = os.path.join(cache, image["name"] + "_yum_varlib")
         test_env["TEST_YUM_VARLIB_PATHS"] = yum_varlib_path
     if not skip_requirements:
-        install_requirements(sourcedir, collection_path, test_env, collection)
+        install_requirements(sourcedir, collection_path, test_env)
     inventory = get_inventory_script(inventory)
     if not skip_callback_plugins:
         setup_callback_plugins(pretty, profile, profile_task_limit, test_env)
