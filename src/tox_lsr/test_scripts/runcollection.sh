@@ -15,61 +15,53 @@ if [ "${LSR_ROLE2COLL_DEBUG:-false}" = true ]; then
   export LSR_DEBUG=true
 fi
 # Collection commands that are run when `tox -e collection`:
-role=$(basename "${TOPDIR}")
-STABLE_TAG=${1:-main}
+STABLE_TAG=${LSR_ROLE2COLL_VERSION:-main}
+if [ "$#" -gt 0 ] && [[ "$1" != --* ]]; then
+  STABLE_TAG="$1"
+  shift
+fi
+mode=--current-role
+mode_set=false
+for arg in "$@"; do
+  case "$arg" in
+    --current-role|--full|--clear)
+      if [ "$mode_set" = true ] && [ "$mode" != "$arg" ]; then
+        echo "Specify only one collection mode" >&2
+        exit 2
+      fi
+      mode="$arg"
+      mode_set=true
+      ;;
+    *)
+      echo "Unknown collection argument: $arg" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [ "$mode" = --clear ]; then
+  rm -rf "$TOX_WORK_DIR/ansible_collections/$LSR_ROLE2COLL_NAMESPACE"
+  exit 0
+fi
 
 testlist="yamllint,flake8,shellcheck,ansible-plugin-scan"
 # py38 - pyunit testing is not yet supported
 #testlist="${testlist},py38"
 
-if [ -z "${LSR_ROLE2COLL_PATH:-}" ]; then
-  automaintenancerepo=https://raw.githubusercontent.com/${LSR_SRC_OWNER}/auto-maintenance/
-  curl -s -L -o "$LSR_TOX_ENV_DIR/tmp/lsr_role2collection.py" "${automaintenancerepo}${STABLE_TAG}"/lsr_role2collection.py
-  curl -s -L -o "$LSR_TOX_ENV_DIR/tmp/runtime.yml" "${automaintenancerepo}${STABLE_TAG}"/lsr_role2collection/runtime.yml
-  # ansible-test needs meta data
-  curl -s -L -o "$LSR_TOX_ENV_DIR/tmp/galaxy.yml" "${automaintenancerepo}${STABLE_TAG}"/galaxy.yml
-else
-  cp "$LSR_ROLE2COLL_PATH/lsr_role2collection.py" "$LSR_TOX_ENV_DIR/tmp"
-  cp "$LSR_ROLE2COLL_PATH/lsr_role2collection/runtime.yml" "$LSR_TOX_ENV_DIR/tmp"
-  cp "$LSR_ROLE2COLL_PATH/galaxy.yml" "$LSR_TOX_ENV_DIR/tmp"
+seed_from_cache=false
+if [ "$mode" = --full ]; then
+  python "$SCRIPTDIR/collection-cache.py" --collection \
+    "$LSR_ROLE2COLL_NAMESPACE.$LSR_ROLE2COLL_NAME"
+  seed_from_cache=true
 fi
-
-rm -rf "$TOX_WORK_DIR/ansible_collections"
-python "$LSR_TOX_ENV_DIR/tmp/lsr_role2collection.py" --src-path "$TOPDIR/.." --dest-path "$TOX_WORK_DIR" \
-  --role "$role" --namespace "${LSR_ROLE2COLL_NAMESPACE}" --collection "${LSR_ROLE2COLL_NAME}" \
-  --meta-runtime "$LSR_TOX_ENV_DIR/tmp/runtime.yml" --subrole-prefix "private_${role}_subrole_" \
-  --src-owner "$LSR_SRC_OWNER" 2>&1 | tee "$TOX_ENV_DIR/collection.out"
+LSR_ROLE2COLL_VERSION="$STABLE_TAG" bash "$SCRIPTDIR/prepare-local-collection.sh" \
+  "$TOPDIR" "$TOX_WORK_DIR" "${LSR_COLLECTIONS_CACHE:-$HOME/.cache/linux-system-roles}" \
+  "$seed_from_cache" 2>&1 | tee "$TOX_ENV_DIR/collection.out"
 
 coll_path="$TOX_WORK_DIR/ansible_collections/$LSR_ROLE2COLL_NAMESPACE/$LSR_ROLE2COLL_NAME"
-cp "$LSR_TOX_ENV_DIR/tmp/galaxy.yml" "$coll_path"
-
-# Use this version in meta/runtime.yml if set
-if [ -n "${LSR_COLLECTION_VERSION:-}" ]; then
-  sed -e "s/^requires_ansible:.*/requires_ansible: \"\>=${LSR_COLLECTION_VERSION}\"/" -i "$coll_path/meta/runtime.yml"
-fi
 
 # create the collection in this dir to share with other testenvs
 cd "$coll_path"
-
-# these are for ansible-lint
-cp "$LSR_CONFIGDIR/collection_yamllint.yml" "$coll_path/.yamllint.yml"
-# remove the extends: from yamllint so that the defaults from ansible-lint
-# will be used
-sed -e '/^extends:/d' -i "$coll_path/.yamllint.yml"
-touch "$coll_path/CHANGELOG.md"
-if [ -f "$TOXINIDIR"/.ansible-lint ]; then
-  cp "$TOXINIDIR"/.ansible-lint "$coll_path"
-fi
-
-# grab our ignore files
-for file in "$TOXINIDIR"/.sanity-ansible-ignore-*.txt; do
-  if [ -f "$file" ]; then
-    if [ ! -d tests/sanity ]; then
-      mkdir -p tests/sanity
-    fi
-    cp "$file" "tests/sanity/${file//*.sanity-ansible-}"
-  fi
-done
 
 # unit testing not working yet - will need these and more
 #export RUN_PYTEST_UNIT_DIR="$role/unit"

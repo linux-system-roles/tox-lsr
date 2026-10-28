@@ -1816,7 +1816,15 @@ def run_ansible_playbooks_libvirt(  # noqa: C901
                 "image-alias applies to all VMs; use per-VM hostnames instead"
             )
     if collection_path:
-        test_env[rq.COLL_PATH_ENV_VAR] = collection_path
+        test_env[rq.COLL_PATH_ENV_VAR] = os.pathsep.join(
+            [collection_path, rq.CACHE_PATH]
+        )
+        other_path_var = (
+            "ANSIBLE_COLLECTIONS_PATHS"
+            if rq.COLL_PATH_ENV_VAR == "ANSIBLE_COLLECTIONS_PATH"
+            else "ANSIBLE_COLLECTIONS_PATH"
+        )
+        test_env.pop(other_path_var, None)
 
     inventory_path = write_inventory
     if not inventory_path:
@@ -2088,9 +2096,7 @@ def runlibvirt(
             "use-yum-cache is not yet supported with runlibvirt; ignoring"
         )
     if not skip_requirements:
-        rq.install_requirements(
-            sourcedir, collection_path, test_env, collection
-        )
+        rq.install_requirements(sourcedir, collection_path, test_env)
     if not skip_callback_plugins:
         rq.setup_callback_plugins(
             pretty, profile, profile_task_limit, test_env

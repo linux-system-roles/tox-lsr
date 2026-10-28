@@ -35,6 +35,49 @@ usage: tox [--lsr-enable] [--version] [-h] [--help-ini] [-v] [-q]
 
 This shows that the `--lsr-enable` flag is available.
 
+### Collection cache
+
+Test environments share Galaxy collections under
+`~/.cache/linux-system-roles/ansible_collections`. Set
+`LSR_COLLECTIONS_CACHE` to another base directory if needed; Ansible searches
+the role's `.tox` directory before the shared cache. The cache checks an installed
+collection's version against a requirement before contacting Galaxy. Galaxy
+uses only the cache directory when resolving installed collections.
+The ansible-lint environments set `ANSIBLE_HOME` to their tox temporary
+directory so ansible-lint does not put `~/.ansible/collections` ahead of the
+shared cache. Ansible-lint runs in offline mode because the tox helper has
+already installed its collection requirements; this also prevents ansible-lint
+from creating another copy of the local collection.
+Collection requirements, including `fedora.linux_system_roles`, are installed
+only in the shared cache. Runtime tests do not change `.tox/ansible_collections`.
+
+Cached collections are checked for newer allowed versions every seven days.
+Set `LSR_COLLECTIONS_UPDATE_INTERVAL_DAYS` to a whole number of days; `0` checks
+on every run. Exact version requirements stay pinned. A failed version check
+leaves the cached collection in place and is retried on the next run.
+
+Run `tox -e update-collection-cache` to check the current role's collection
+requirements in the shared cache. Use
+`tox -e update-collection-cache -- --force` to remove and reinstall those
+cached requirements. This environment leaves `.tox/ansible_collections` alone.
+Other collections in the shared cache are left in place.
+
+`tox -e collection` (or `tox -e collection -- --current-role`) converts only
+the current role into `.tox/ansible_collections` and keeps other local roles.
+`tox -e collection -- --clear` only removes
+`.tox/ansible_collections/$LSR_ROLE2COLL_NAMESPACE`.
+`tox -e collection -- --full` first ensures the shared cache has
+`fedora.linux_system_roles`, then copies
+the full `fedora.linux_system_roles` collection from the shared cache, then
+overwrites its current role with the checkout. Run `--full` before tests that
+need the other roles in the collection.
+
+For integration tests, run `tox -e collection -- --clear` first when testing
+the legacy role so Ansible does not use a local collection in `.tox`. To test
+the current role code in collection format, run `tox -e collection -- --full`
+first. This creates a local `fedora.linux_system_roles` collection with the
+current role's changes.
+
 ### Additional requirements
 
 - `shellcheck` test requires `shellcheck` package.

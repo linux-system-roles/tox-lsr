@@ -14,7 +14,8 @@ CONTAINER_SKIP_TAGS=${CONTAINER_SKIP_TAGS:---skip-tags tests::uses_selinux}
 CONTAINER_CONFIG="$HOME/.config/linux-system-roles.json"
 
 COLLECTION_BASE_PATH="${COLLECTION_BASE_PATH:-$TOX_WORK_DIR}"
-LOCAL_COLLECTION="${LOCAL_COLLECTION:-fedora/linux_system_roles}"
+LSR_COLLECTIONS_CACHE="${LSR_COLLECTIONS_CACHE:-$HOME/.cache/linux-system-roles}"
+collection_cache_script="$(dirname "$0")/collection-cache.py"
 
 BOOTC_MODE=
 
@@ -26,20 +27,13 @@ is_ansible_env_var_supported() {
 # ensure that we don't use system-wide collections by default
 export ANSIBLE_COLLECTIONS_SCAN_SYS_PATH=false
 if is_ansible_env_var_supported ANSIBLE_COLLECTIONS_PATH; then
-    export ANSIBLE_COLLECTIONS_PATH="${ANSIBLE_COLLECTIONS_PATH:-$COLLECTION_BASE_PATH}"
-    coll_path_var=ANSIBLE_COLLECTIONS_PATH
+    unset ANSIBLE_COLLECTIONS_PATHS
+    export ANSIBLE_COLLECTIONS_PATH="$COLLECTION_BASE_PATH:$LSR_COLLECTIONS_CACHE"
 else
-    export ANSIBLE_COLLECTIONS_PATHS="${ANSIBLE_COLLECTIONS_PATHS:-$COLLECTION_BASE_PATH}"
-    coll_path_var=ANSIBLE_COLLECTIONS_PATHS
+    unset ANSIBLE_COLLECTIONS_PATH
+    export ANSIBLE_COLLECTIONS_PATHS="$COLLECTION_BASE_PATH:$LSR_COLLECTIONS_CACHE"
 fi
 export ANSIBLE_INJECT_FACT_VARS="${ANSIBLE_INJECT_FACT_VARS:-false}"
-
-galaxy_collection() {
-    local coll_path sub_cmd
-    coll_path="$1"; shift  # collection path to use for listing, or to install into
-    sub_cmd="$1"; shift  # install, list, etc.
-    env -v "$coll_path_var"="$coll_path" ansible-galaxy collection "$sub_cmd" -p "$coll_path" "$@"
-}
 
 logit() {
     local level
@@ -91,38 +85,19 @@ wait_for_container_running() {
 }
 
 install_requirements() {
-    local rq save_tar force upgrade coll_path
-    info Installing Collections in "$COLLECTION_BASE_PATH"
-    # see what capabilities ansible-galaxy has
-    if ansible-galaxy collection install --help 2>&1 | grep -q -- --force; then
-        force=--force
-    fi
-    if ansible-galaxy collection install --help 2>&1 | grep -q -- --upgrade; then
-        upgrade=--upgrade
-    fi
-    coll_path="$COLLECTION_BASE_PATH/ansible_collections"
-    if [ -d "$coll_path/$LOCAL_COLLECTION" ]; then
-        info saving local collection at "$coll_path/$LOCAL_COLLECTION"
-        save_tar="$WORKDIR/save.tar"
-        tar cfP "$save_tar" -C "$coll_path" "$LOCAL_COLLECTION"
-    fi
+    local rq
+    local -a req_args=()
     for rq in meta/requirements.yml meta/collection-requirements.yml tests/collection-requirements.yml; do
         if [ -f "$rq" ]; then
             if [ "$rq" = meta/requirements.yml ]; then
                 warning use meta/collection-requirements.yml instead of "$rq"
             fi
-            # shellcheck disable=SC2086
-            galaxy_collection "$COLLECTION_BASE_PATH" install ${force:-} ${upgrade:-} -vv -r "$rq"
+            req_args+=(--requirements "$rq")
         fi
     done
-    if [ -n "${save_tar:-}" ] && [ -f "${save_tar:-}" ]; then
-        tar xfP "$save_tar" -C "$coll_path" --overwrite
-        info restoring local collection at "$coll_path/$LOCAL_COLLECTION"
+    if [ "${#req_args[@]}" -gt 0 ]; then
+        python "$collection_cache_script" "${req_args[@]}"
     fi
-    # for debugging
-    info Installed Collections in "$COLLECTION_BASE_PATH"
-    galaxy_collection "$COLLECTION_BASE_PATH" list -vv
-    info "========================="
 }
 
 setup_callback_plugins() {
@@ -146,16 +121,15 @@ setup_callback_plugins() {
         fi
         if [ -n "${need_debug_py:-}" ] || [ -n "${need_profile_py:-}" ]; then
             info installing callback plugins in "$callback_plugin_dir"
-            galaxy_collection "$LSR_TOX_ENV_TMP_DIR" install -vv "${LSR_ANSIBLE_POSIX_VERSION:-ansible.posix}"
-            tmp_debug_py="$LSR_TOX_ENV_TMP_DIR/ansible_collections/ansible/posix/plugins/callback/debug.py"
-            tmp_profile_py="$LSR_TOX_ENV_TMP_DIR/ansible_collections/ansible/posix/plugins/callback/profile_tasks.py"
+            python "$collection_cache_script" --collection "${LSR_ANSIBLE_POSIX_VERSION:-ansible.posix}"
+            tmp_debug_py="$LSR_COLLECTIONS_CACHE/ansible_collections/ansible/posix/plugins/callback/debug.py"
+            tmp_profile_py="$LSR_COLLECTIONS_CACHE/ansible_collections/ansible/posix/plugins/callback/profile_tasks.py"
             if [ -n "${need_debug_py:-}" ]; then
-                mv "$tmp_debug_py" "$debug_py"
+                cp "$tmp_debug_py" "$debug_py"
             fi
             if [ -n "${need_profile_py:-}" ]; then
-                mv "$tmp_profile_py" "$profile_py"
+                cp "$tmp_profile_py" "$profile_py"
             fi
-            rm -rf "$LSR_TOX_ENV_TMP_DIR/ansible_collections"
         else
             info callback plugins already installed in "$callback_plugin_dir"
             if [ "${LSR_DEBUG:-false}" = true ]; then
@@ -210,9 +184,8 @@ setup_connection_plugin() {
             local collection_plugin_file="ansible_collections/containers/podman/plugins/connection/$con_plugin"
             if [ ! -f "$TOX_WORK_DIR/$collection_plugin_file" ]; then
                 info installing connection plugins in "$con_plugin_path"
-                galaxy_collection "$LSR_TOX_ENV_TMP_DIR" install -vv containers.podman
-                mv "$LSR_TOX_ENV_TMP_DIR/$collection_plugin_file" "$con_plugin_path"
-                rm -rf "$LSR_TOX_ENV_TMP_DIR/ansible_collections"
+                python "$collection_cache_script" --collection containers.podman
+                cp "$LSR_COLLECTIONS_CACHE/$collection_plugin_file" "$con_plugin_path"
             else
                 info connection plugins collection already installed in "$TOX_WORK_DIR/$collection_plugin_file"
                 # copy the connection plugin to the local path
