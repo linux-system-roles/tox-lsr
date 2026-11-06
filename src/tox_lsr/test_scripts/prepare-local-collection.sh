@@ -39,8 +39,9 @@ elif [ "$seed_from_cache" != false ]; then
     echo "Unknown collection mode: $seed_from_cache" >&2
     exit 2
 fi
-# Replace only the current role, leaving other local roles intact.
-rm -rf "$collection_dir/roles/$role" "$collection_dir/tests/$role"
+# Replace only the current role including private subroles, leaving other local roles intact.
+rm -rf "$collection_dir/roles/$role" "$collection_dir/tests/$role" \
+  "$collection_dir"/roles/private_"$role"_subrole_*
 
 python "$work_dir/lsr_role2collection.py" --src-path "$(dirname "$role_dir")" \
     --dest-path "$local_base" --role "$role" --namespace "$namespace" \
