@@ -12,18 +12,20 @@ roles via `tox`. The default settings can be overridden by role developer in
 For local development, if you have already installed `tox` and `pip`:
 
 ```
-pip install --user git+https://github.com/linux-system-roles/tox-lsr@main
+pip install --user --force-reinstall git+https://github.com/linux-system-roles/tox-lsr@main
 ```
 
-This will install `tox-lsr` in your `~/.local` directory where tox should find
-it.  If you want to use a release tagged version:
+This installs `tox-lsr` into `~/.local` where tox finds it.  `--force-reinstall`
+is required because the `@main` version string never changes, so otherwise pip
+keeps an already-installed copy instead of updating it.
+
+We do not publish releases; our GitHub workflows pin `tox-lsr` by commit SHA.
+If you want to use a specific commit SHA (see
+https://github.com/linux-system-roles/tox-lsr/commits/main for the list):
 
 ```
-pip install --user git+https://github.com/linux-system-roles/tox-lsr@0.0.4
+pip install --user --force-reinstall git+https://github.com/linux-system-roles/tox-lsr@<commit-sha>
 ```
-
-Look at https://github.com/linux-system-roles/tox-lsr/releases for the list of
-releases and tags.
 
 To confirm that you have it and that `tox` can use it:
 
