@@ -20,35 +20,19 @@ STORAGE=$(podman info -f '{{.Store.GraphRoot}}')
 
 OS_RELEASE=$(buildah run "$BUILDAH_ID" cat /etc/os-release)
 
-# buildah → container image
+# buildah to container image
 buildah commit "$BUILDAH_ID" "$OCI_TAG"
 # always clean up the temporary tag
 trap "podman rmi $OCI_TAG" EXIT INT QUIT PIPE
 
-# invoke booc-image-builder
+# prepare input files and output directory
 rm -rf tmp
 OUTPUT="./tmp/$BUILDAH_ID"
 mkdir -p "$OUTPUT"
 
 # merge role customizations into the config
-python3 -c 'import sys, os, yaml, json
-pubkey = sys.argv[1]
-cfg = {"blueprint": {"customizations": {"user": [{"name": "root", "password": "foobar", "key": pubkey}]}}}
-if os.path.exists("osbuild_config.yml"):
-    with open("osbuild_config.yml", "r") as f:
-        user_cfg = yaml.safe_load(f)
-    if "blueprint" in user_cfg:
-        users = user_cfg["blueprint"].get("customizations", {}).get("user", [])
-    elif "customizations" in user_cfg:
-        users = user_cfg["customizations"].get("user", [])
-    rootuser = [u for u in users if u["name"] == "root"]
-    if rootuser:
-        print("ERROR: cannot override root user in osbuild_config.yml")
-        sys.exit(1)
-    cfg["blueprint"]["customizations"]["user"].extend(users)
-with open("tmp/bib.config.json", "w") as f:
-    json.dump(cfg, f)
-' "$PUBKEY"
+python "${LSR_SCRIPTDIR:-.}/write_osbuild_config.py" --input osbuild_config.yml \
+    --pubkey "$PUBKEY" --format toml --output tmp/blueprint.toml
 
 # for local development, support adding "sudo_password" to the vault, see README.md
 # not necessary for e.g. GitHub actions which has passwordless sudo
@@ -84,10 +68,12 @@ fi
 if [ -z "$AM_ROOT" ] && [ "${OS_RELEASE%platform:el10*}" != "$OS_RELEASE" ]; then
     STORAGE_COPY="${STORAGE}.image-builder"
     run_root cp -a "$STORAGE" "$STORAGE_COPY"
-    VOL_MODE="rw"
+    VOL_MODE=":rw"
     STORAGE="$STORAGE_COPY"
 else
-    VOL_MODE="O"
+    # This doesn't seem to be needed - overlay isn't working
+    # VOL_MODE=":O"
+    VOL_MODE=""
 fi
 
 # GitHub's runners create a $STORAGE/db.sql which contains the absolute storage path; that breaks
@@ -99,17 +85,21 @@ fi
 # image-builder requires --rootfs option for Fedora
 if echo "$OS_RELEASE" | grep -q '^ID=fedora'; then
     ROOTFS_OPT="--rootfs=btrfs"
+    DEFAULT_FS_OPT="--bootc-default-fs=btrfs"
 fi
 
-# image-builder unfortunately needs $STORAGE to be writable, but that would destroy
-# permissions on the host; so mount it with a temp overlay
-run_root podman run --rm -i --privileged --security-opt=label=type:unconfined_t \
-    --volume="$STORAGE":/var/lib/containers/storage:"$VOL_MODE" \
-    --volume=./tmp/bib.config.json:/config.json \
+# https://github.com/osbuild/image-builder/blob/main/doc/20-advanced/20-bootc/50-migration.md
+run_root podman run --rm -i --privileged --pull=newer --security-opt label=type:unconfined_t \
+    --volume="$STORAGE":/var/lib/containers/storage"$VOL_MODE" \
+    --volume=./tmp/blueprint.toml:/blueprint.toml:ro \
     --volume="$OUTPUT":/output \
-    quay.io/centos-bootc/bootc-image-builder:latest \
-    --type=qcow2 ${ROOTFS_OPT:-} --config=/config.json \
-    "$OCI_TAG"
+    ghcr.io/osbuild/image-builder-cli:latest build \
+        --verbose \
+        --blueprint /blueprint.toml \
+        --output-dir /output \
+        --bootc-ref "$OCI_TAG" \
+	${DEFAULT_FS_OPT:-} \
+	qcow2
 
 # when running as user, restore permissions
 if [ -z "$AM_ROOT" ]; then
@@ -118,4 +108,6 @@ if [ -z "$AM_ROOT" ]; then
         mv "$STORAGE/db.sql.bak" "$STORAGE/db.sql"
     fi
     [ -z "${STORAGE_COPY:-}" ] || run_root rm -rf "$STORAGE_COPY"
+    # Error: open ~/.local/share/containers/storage/overlay-containers/volatile-containers.json: permission denied
+    run_root chown -R "$(id -u):$(id -g)" ~/.local/share/containers
 fi
